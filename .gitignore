@@ -5,6 +5,8 @@ cellsweb-rpc-overview.md
 implementation-plan.md
 node-bun-go-comparison.md
 walkthrough.md
+autoscaler-architecture.md
+example-mongo/autoscaler-architecture.md
 dist/
 bin/
 *.exe
