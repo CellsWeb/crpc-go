@@ -605,6 +605,11 @@ import net from "node:net";
 import readline from "node:readline";
 import type { RpcContractMap } from "@/types/crpc";
 
+export interface CallOptions {
+  headers?: Record<string, string>;
+  skipMiddlewares?: boolean;
+}
+
 export class GoRpcIpcClient {
   private socketPath: string;
 
@@ -615,19 +620,20 @@ export class GoRpcIpcClient {
   async call<K extends keyof RpcContractMap>(
     fn: K,
     data: RpcContractMap[K]["input"],
-    headers: Record<string, string> = {}
+    options: CallOptions = {}
   ): Promise<RpcContractMap[K]["output"]> {
     return new Promise((resolve, reject) => {
       const client = net.createConnection({ path: this.socketPath });
       const rl = readline.createInterface({ input: client });
 
       client.on("connect", () => {
-        // Send single-line JSON request
+        // Send single-line JSON request with optional headers and middleware bypass flag
         const payload = JSON.stringify({
           id: Math.random().toString(36).slice(2),
           function: fn,
           data,
-          headers,
+          headers: options.headers ?? {},
+          skipMiddlewares: options.skipMiddlewares ?? false,
         });
         client.write(payload + "\n");
       });
@@ -667,16 +673,35 @@ Now call your Go microservice with **zero HTTP latency** and **100% compile-time
 // app/actions/user.ts
 "use server";
 
+import { headers } from "next/headers";
 import { goRpc } from "@/lib/go-rpc";
 
 export async function getUserProfile(userId: string) {
-  // Fully typed: Autocompletes "user.getProfile", requires `userId`, and returns typed output!
-  const user = await goRpc.call("user.getProfile", {
-    userId,
-  });
+  const reqHeaders = await headers();
 
-  console.log(user.name, user.email);
+  // 1. Standard call with forwarded auth headers (executes Go middlewares)
+  const user = await goRpc.call(
+    "user.getProfile",
+    { userId },
+    {
+      headers: {
+        authorization: reqHeaders.get("authorization") ?? "",
+      },
+    }
+  );
+
   return user;
+}
+
+export async function getAdminInternalData(userId: string) {
+  // 2. Internal trusted call: Bypass Go middlewares directly
+  const data = await goRpc.call(
+    "user.getProfile",
+    { userId },
+    { skipMiddlewares: true }
+  );
+
+  return data;
 }
 ```
 

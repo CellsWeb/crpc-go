@@ -13,10 +13,11 @@ import (
 
 // BridgeRequest represents an IPC call from Node.js
 type BridgeRequest struct {
-	ID       string            `json:"id"`
-	Function string            `json:"function"`
-	Data     map[string]any    `json:"data"`
-	Headers  map[string]string `json:"headers"`
+	ID              string            `json:"id"`
+	Function        string            `json:"function"`
+	Data            map[string]any    `json:"data"`
+	Headers         map[string]string `json:"headers,omitempty"`
+	SkipMiddlewares bool              `json:"skipMiddlewares,omitempty"`
 }
 
 // BridgeResponse represents the IPC response returned to Node.js
@@ -50,7 +51,8 @@ func ServeStdio(app *rpc.CoreRPC) error {
 
 		var output any
 		err := app.CallInMemory(req.Function, req.Data, &output, rpc.CallOptions{
-			Headers: req.Headers,
+			Headers:         req.Headers,
+			SkipMiddlewares: req.SkipMiddlewares,
 		})
 
 		if err != nil {
@@ -115,7 +117,8 @@ func handleSocketConn(app *rpc.CoreRPC, conn net.Conn) {
 
 		var output any
 		callErr := app.CallInMemory(req.Function, req.Data, &output, rpc.CallOptions{
-			Headers: req.Headers,
+			Headers:         req.Headers,
+			SkipMiddlewares: req.SkipMiddlewares,
 		})
 
 		if callErr != nil {
