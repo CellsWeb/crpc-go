@@ -538,10 +538,147 @@ export async function getUser(userId: string) {
 }
 ```
 
-### Mode 2: IPC Unix Domain Socket / Stdio Bridge (`pkg/nodebridge`)
-For local monorepos where Node and Go run on the same machine, `crpc-go` includes a built-in IPC bridge:
-- Runs via Unix Domain Socket (`/tmp/crpc.sock`) with zero TCP network stack overhead.
-- Includes TypeScript generator: `nodebridge.GenerateTypeScriptDeclarations(app)` exports `.d.ts` declaration maps from Go struct definitions automatically!
+### Mode 2: High-Speed IPC Bridge & Automated TypeScript `.d.ts` Generation (`pkg/nodebridge`)
+
+When running Go and Node.js/Next.js side-by-side on the same machine, container, or monorepo, you can bypass the TCP network stack entirely. `crpc-go` provides a built-in IPC bridge running over **Unix Domain Sockets** (`/tmp/crpc.sock`) with **<0.1ms (100µs)** latency and automated TypeScript typing.
+
+#### 1. What Go Gives
+
+##### A. Exporting TypeScript Contracts (`.d.ts`)
+Run this snippet or add a CLI task in your Go server to generate your frontend/Node types automatically from your Go structs:
+
+```go
+package main
+
+import (
+	"os"
+	"github.com/CellsWeb/crpc-go/pkg/nodebridge"
+)
+
+func exportTypes(app *rpc.CoreRPC) {
+	// Generates complete TypeScript declaration map
+	dts := nodebridge.GenerateTypeScriptDeclarations(app.Functions())
+	_ = os.WriteFile("../frontend/src/types/crpc.d.ts", []byte(dts), 0644)
+}
+```
+
+Generated `crpc.d.ts`:
+```ts
+export type UserGetProfileInput = {
+  userId: string;
+};
+
+export type UserGetProfileOutput = {
+  id: string;
+  name: string;
+  email: string;
+};
+
+export interface RpcContractMap {
+  "user.getProfile": {
+    input: UserGetProfileInput;
+    output: UserGetProfileOutput;
+  };
+}
+```
+
+##### B. Starting the Unix Domain Socket Listener in Go
+In your Go server `main.go`:
+```go
+go func() {
+	socketPath := "/tmp/crpc.sock"
+	log.Printf("🔌 IPC Socket running at %s", socketPath)
+	if err := nodebridge.ServeUnixSocket(app, socketPath); err != nil {
+		log.Printf("IPC Socket error: %v", err)
+	}
+}()
+```
+
+---
+
+#### 2. What to Do in Node.js / Next.js
+
+Create a lightweight IPC client in your Node.js or Next.js app (`src/lib/go-rpc.ts`):
+
+```ts
+import net from "node:net";
+import readline from "node:readline";
+import type { RpcContractMap } from "@/types/crpc";
+
+export class GoRpcIpcClient {
+  private socketPath: string;
+
+  constructor(socketPath = "/tmp/crpc.sock") {
+    this.socketPath = socketPath;
+  }
+
+  async call<K extends keyof RpcContractMap>(
+    fn: K,
+    data: RpcContractMap[K]["input"],
+    headers: Record<string, string> = {}
+  ): Promise<RpcContractMap[K]["output"]> {
+    return new Promise((resolve, reject) => {
+      const client = net.createConnection({ path: this.socketPath });
+      const rl = readline.createInterface({ input: client });
+
+      client.on("connect", () => {
+        // Send single-line JSON request
+        const payload = JSON.stringify({
+          id: Math.random().toString(36).slice(2),
+          function: fn,
+          data,
+          headers,
+        });
+        client.write(payload + "\n");
+      });
+
+      rl.on("line", (line) => {
+        try {
+          const res = JSON.parse(line);
+          client.end();
+          if (res.status === "ok") {
+            resolve(res.data);
+          } else {
+            reject(new Error(res.error || "RPC error"));
+          }
+        } catch (err) {
+          client.end();
+          reject(err);
+        }
+      });
+
+      client.on("error", (err) => {
+        reject(new Error(`Failed connecting to Go IPC socket: ${err.message}`));
+      });
+    });
+  }
+}
+
+export const goRpc = new GoRpcIpcClient();
+```
+
+---
+
+#### 3. How to Use in Next.js Server Actions or Node Services
+
+Now call your Go microservice with **zero HTTP latency** and **100% compile-time TypeScript type safety**:
+
+```ts
+// app/actions/user.ts
+"use server";
+
+import { goRpc } from "@/lib/go-rpc";
+
+export async function getUserProfile(userId: string) {
+  // Fully typed: Autocompletes "user.getProfile", requires `userId`, and returns typed output!
+  const user = await goRpc.call("user.getProfile", {
+    userId,
+  });
+
+  console.log(user.name, user.email);
+  return user;
+}
+```
 
 ---
 
