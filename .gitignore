@@ -1,0 +1,37 @@
+# Internal development artifacts & test reports
+architecture-questions.md
+audit-and-benchmark-report.md
+cellsweb-rpc-overview.md
+implementation-plan.md
+node-bun-go-comparison.md
+walkthrough.md
+dist/
+bin/
+*.exe
+*.exe~
+*.dll
+*.so
+*.dylib
+*.test
+*.out
+server
+
+# OS Files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Environment variables
+.env
+.env.local
+
+# Uploads and temporary directories
+public/uploads/*
+!public/uploads/.gitkeep
+example-mongo/public/uploads/*
+!example-mongo/public/uploads/.gitkeep
+tmp/

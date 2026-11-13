@@ -1,0 +1,45 @@
+# fly.toml app configuration file for CellsWeb RPC Go Engine
+# Scale-to-zero, request-based autoscaling on 1 Core / 256MB RAM ($2.79/mo)
+
+app = "cellsweb-rpc-go-api"
+primary_region = "syd"
+
+[build]
+  dockerfile = "Dockerfile"
+
+[env]
+  PORT = "4001"
+  HOST = "0.0.0.0"
+  RPC_PATH = "/rpc"
+  DOCS_ENABLED = "true"
+  DOCS_PATH = "/docs"
+  NODE_ENV = "production"
+  SERVER_URL = "https://cellsweb-rpc-go-api.fly.dev"
+  UPLOAD_DIR = "/app/public/uploads"
+  UPLOAD_MODE = "local"
+
+[http_service]
+  internal_port = 4001
+  force_https = true
+  auto_stop_machines = "stop"
+  auto_start_machines = true
+  min_machines_running = 1
+
+  # Autoscaling rules based on active concurrent requests
+  [http_service.concurrency]
+    type = "requests"
+    soft_limit = 2500   # When requests reach 2,500, Fly boots another machine
+    hard_limit = 5000   # Hard limit before traffic is diverted to sibling machines
+
+  [[http_service.checks]]
+    interval = "10s"
+    timeout = "2s"
+    grace_period = "5s"
+    method = "GET"
+    path = "/health"
+
+# Sizing configuration: 1 shared CPU core, 256MB RAM ($2.79/month)
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "256mb"
+  cpus = 1
