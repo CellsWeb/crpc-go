@@ -18,17 +18,9 @@ This guide walks you through installing CellsWeb RPC Go, scaffolding a new proje
 
 ---
 
-## 📦 Installation
+## 🛠️ Step 1: Install the CLI Tool (`crpc-go`)
 
-Add the core Go module to your project:
-
-```bash
-go get github.com/CellsWeb/crpc-go@latest
-```
-
-### Install the CLI Tool (`crpc-go`)
-
-The `crpc-go` CLI scaffolds production-ready project templates, generates functions, and scaffolds middlewares:
+Install the global CLI scaffolder anywhere from your terminal:
 
 ```bash
 go install github.com/CellsWeb/crpc-go/cmd/crpc-go@latest
@@ -42,14 +34,20 @@ crpc-go --version
 
 ---
 
-## 🚀 Creating a New Project
+## 🚀 Step 2: Creating a New Project
 
-To bootstrap a new CellsWeb RPC Go project:
+Use `crpc-go` to bootstrap a complete project with pre-configured directory layout and `go.mod`:
 
 ```bash
 crpc-go init my-rpc-api
 cd my-rpc-api
 ```
+
+> **Adding to an Existing Project**:
+> If adding to an existing Go project that already has a `go.mod`, install the library inside your project folder:
+> ```bash
+> go get github.com/CellsWeb/crpc-go@latest
+> ```
 
 ### Generated Project Layout
 
