@@ -39,4 +39,5 @@ example-mongo/public/uploads/*
 tmp/
 site/
 example-node/node_modules/
+bench-uploads/
 example-node/dist/

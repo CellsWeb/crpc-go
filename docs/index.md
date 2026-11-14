@@ -56,15 +56,31 @@ Benchmarked on Apple M-series hardware (1 CPU Core, concurrency = 100, 50,000 re
 
 ---
 
+## ⚖️ CellsWeb RPC vs Connect-RPC vs tRPC vs Twirp
+
+| Capability / Feature | CellsWeb RPC (`crpc`) | Connect-RPC | tRPC | Twirp |
+| :--- | :--- | :--- | :--- | :--- |
+| **Go & TypeScript Parity** | **Yes** (100% interoperable wire format) | Yes (via Protobuf) | No (TypeScript/JS only) | Yes (via Protobuf) |
+| **Zero-Codegen Client** | **Yes** (Dynamic client SDK, no build step) | No (Requires `buf generate`) | Yes (TypeScript types only) | No (Requires `protoc`) |
+| **Single Endpoint (`/rpc`)** | **Yes** (Unified routing & proxy configuration) | No (Endpoint per RPC method) | No (Endpoint per procedure) | No (Endpoint per method) |
+| **Zero-Config Live Docs UI** | **Yes** (Server-rendered dark theme `/docs`) | No (Requires third-party tools) | No (Third-party OpenAPI) | No |
+| **Multipart File Streaming** | **Yes** (Streaming intake, Web & RN objects) | Complex (bytes in proto payload) | Complex (Custom FormData) | Complex (bytes in proto) |
+| **In-Process Testing Engine** | **Yes** (`NewTestCaller` / zero socket) | No (Requires network listener) | Yes (caller) | No (Network listener) |
+| **Dual HTTP Status Mode** | **Yes** (Uniform 200 or standard APM codes) | No (gRPC status codes) | No (HTTP error codes) | No (HTTP error codes) |
+| **Go 1.27 JSON v2 Standard**| **Yes** (Enforced, zero-allocation serialization) | No | N/A | No |
+
+---
+
 ## 📚 Documentation Table of Contents
 
 1. [Getting Started](./getting-started.md) — Installation, CLI scaffolder, and quickstart guide.
-2. [Architecture & Lifecycle](./architecture.md) — fasthttp execution pipeline, envelopes, and dispatching.
-3. [Writing Functions & Contracts](./functions.md) — Co-located `contracts.go`, `middlewares.go`, `run.go`, schemas, and file uploads.
-4. [Middlewares & Context](./middlewares.md) — Header validation, options schemas, context namespacing, and fail-closed security.
-5. [Node.js & Next.js IPC Integration](./node-ipc.md) — Unix domain sockets, TypeScript `.d.ts` generator, and Next.js Server Actions.
-6. [Custom HTTP Routes & In-Process Calling](./custom-routes.md) — Mounting REST endpoints, webhooks, and `c.Call()` in-memory dispatch.
-7. [In-Process Testing](./testing.md) — `rpc.NewTestCaller`, zero network ports, and security audit testing.
-8. [Interactive Documentation UI](./interactive-docs.md) — Built-in dark documentation portal, schema split view, and cURL builder.
-9. [API Reference](./api-reference.md) — Complete Go package and symbol reference.
-10. [Production Deployment & Autoscaling](./deployment.md) — Docker multi-stage builds, Fly.io, and CPU/RAM autoscaler architecture.
+2. [Benchmarks & Attack Survival](./benchmarks.md) — Multi-engine performance matrices, Docker resource scaling, and attack results.
+3. [Architecture & Lifecycle](./architecture.md) — fasthttp execution pipeline, envelopes, and dispatching.
+4. [Writing Functions & Contracts](./functions.md) — Co-located `contracts.go`, `middlewares.go`, `run.go`, schemas, and file uploads.
+5. [Middlewares & Context](./middlewares.md) — Header validation, options schemas, context namespacing, and fail-closed security.
+6. [Node.js & Next.js IPC Integration](./node-ipc.md) — Unix domain sockets, TypeScript `.d.ts` generator, and Next.js Server Actions.
+7. [Custom HTTP Routes & In-Process Calling](./custom-routes.md) — Mounting REST endpoints, webhooks, and `c.Call()` in-memory dispatch.
+8. [In-Process Testing](./testing.md) — `rpc.NewTestCaller`, zero network ports, and security audit testing.
+9. [Interactive Documentation UI](./interactive-docs.md) — Built-in dark documentation portal, schema split view, and cURL builder.
+10. [API Reference](./api-reference.md) — Complete Go package and symbol reference.
+11. [Production Deployment & Autoscaling](./deployment.md) — Docker multi-stage builds, Fly.io, and CPU/RAM autoscaler architecture.

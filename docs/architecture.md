@@ -116,3 +116,18 @@ flowchart TD
 ### Memory Optimization
 - **Zero Allocations per Hot Path**: fasthttp reuses byte slices across requests using `sync.Pool`.
 - **Automatic File Cleanup**: Multipart file uploads stream to sandboxed temporary files. The context tracks them (`ctx.TrackFile()`) and releases them immediately upon request termination (`ctx.Cleanup()`).
+
+---
+
+## 🔒 Go 1.27 `encoding/json/v2` Security & Serialization
+
+`crpc-go` standardizes on the official Go 1.27 `encoding/json/v2` engine:
+
+1. **Immediate Duplicate Key Rejection**:
+   - Standard JSON parsers (including JavaScript `JSON.parse` and Go JSON v1) quietly accept duplicate keys (e.g. `{"role": "user", "role": "admin"}`), picking the last one.
+   - Go 1.27 JSON v2 rejects duplicate keys at the parser boundary with `jsontext: duplicate object member name`, repelling parser differential and auth-bypass attacks.
+2. **Nil Slice & Map Guarantee**:
+   - In Go JSON v1, uninitialized `nil` slices serialized to `null`, causing frontend applications running `.map()` to throw `TypeError: Cannot read properties of null`.
+   - Under JSON v2, `nil` slices automatically serialize as `[]`, and `nil` maps serialize as `{}`, preventing frontend crashes.
+3. **Zero-Allocation Streaming**:
+   - Responses serialize directly into response buffers using `json.MarshalWrite(buf, v)`, eliminating intermediary string allocations.
