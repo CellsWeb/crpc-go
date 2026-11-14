@@ -60,6 +60,7 @@ nav:
       - Architecture & Lifecycle: architecture.md
   - Core Guides:
       - Functions & Contracts: functions.md
+      - Data Types & Schemas: schemas.md
       - Middlewares & Context: middlewares.md
       - Custom HTTP Routes: custom-routes.md
   - Fullstack & Tooling:

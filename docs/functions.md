@@ -30,7 +30,10 @@ functions/user/getProfile/
 ```go
 package getprofile
 
-import "github.com/CellsWeb/crpc-go/pkg/rpc"
+import (
+	"github.com/CellsWeb/crpc-go/pkg/rpc"
+	"github.com/CellsWeb/crpc-go/pkg/schema"
+)
 
 const (
 	Namespace    = "user"
@@ -44,8 +47,22 @@ var Metadata = rpc.FunctionMetadata{
 	Tags:        []string{"user", "profile"},
 }
 
+// Fluent TypeBox/Zod-like schema definition:
+var InputSchema = schema.Object(map[string]*schema.SchemaRule{
+	"id": schema.String().Min(1).Describe("Target user identifier"),
+})
+
+var OutputSchema = schema.Object(map[string]*schema.SchemaRule{
+	"id":        schema.String(),
+	"email":     schema.String().Email(),
+	"name":      schema.String(),
+	"role":      schema.String(),
+	"createdAt": schema.Integer(),
+})
+
+// Go structs for handler type safety:
 type Input struct {
-	ID string `json:"id" doc:"Target user identifier"`
+	ID string `json:"id"`
 }
 
 type Output struct {
@@ -55,6 +72,9 @@ type Output struct {
 	Role      string `json:"role"`
 	CreatedAt int64  `json:"createdAt"`
 }
+
+// NOTE: You can also auto-infer schemas directly from plain Go structs:
+// var InputSchema = schema.FromStruct(Input{})
 ```
 
 ### Struct Tags for Automatic Documentation

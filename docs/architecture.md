@@ -93,24 +93,24 @@ Under the hood, CellsWeb RPC Go uses **fasthttp**, the fastest HTTP engine in th
 
 ```mermaid
 flowchart TD
-    Socket[Client TCP Socket / fasthttp Connection] --> Preflight{OPTIONS Preflight?}
-    Preflight -- Yes --> CORS[Apply CORS & Return HTTP 204]
-    Preflight -- No --> Docs{Path == /docs?}
-    Docs -- Yes --> RenderDocs[Render Server-Side HTML Docs]
-    Docs -- No --> Route{Custom Route?}
-    Route -- Yes --> CustomHandler[Execute HTTPHandlerFunc]
-    Route -- No --> RPC{Path == /rpc?}
-    RPC -- No --> NotFound[Return 404 Not Found]
-    RPC -- Yes --> ContentType{Content-Type?}
-    ContentType -- application/json --> ParseJSON[Parse JSON Body]
-    ContentType -- multipart/form-data --> ParseForm[Stream Busboy Multipart]
-    ParseJSON --> Dispatch[O(1) Function Registry Lookup]
+    Socket["Client TCP Socket / fasthttp Connection"] --> Preflight{"OPTIONS Preflight?"}
+    Preflight -- Yes --> CORS["Apply CORS & Return HTTP 204"]
+    Preflight -- No --> Docs{"Path == /docs?"}
+    Docs -- Yes --> RenderDocs["Render Server-Side HTML Docs"]
+    Docs -- No --> Route{"Custom Route?"}
+    Route -- Yes --> CustomHandler["Execute HTTPHandlerFunc"]
+    Route -- No --> RPC{"Path == /rpc?"}
+    RPC -- No --> NotFound["Return 404 Not Found"]
+    RPC -- Yes --> ContentType{"Content-Type?"}
+    ContentType -- application/json --> ParseJSON["Parse JSON Body"]
+    ContentType -- multipart/form-data --> ParseForm["Stream Busboy Multipart"]
+    ParseJSON --> Dispatch["O(1) Function Registry Lookup"]
     ParseForm --> Dispatch
-    Dispatch --> MwPipeline[Execute Middleware Pipeline]
-    MwPipeline --> Validate[Validate Input Schema]
-    Validate --> Business[Execute Handler Run]
-    Business --> Envelope[Build HTTP 200 Envelope]
-    Envelope --> Flush[fasthttp Zero-Copy Write]
+    Dispatch --> MwPipeline["Execute Middleware Pipeline"]
+    MwPipeline --> Validate["Validate Input Schema"]
+    Validate --> Business["Execute Handler Run"]
+    Business --> Envelope["Build HTTP 200 Envelope"]
+    Envelope --> Flush["fasthttp Zero-Copy Write"]
 ```
 
 ### Memory Optimization

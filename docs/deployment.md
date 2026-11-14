@@ -93,10 +93,10 @@ Instead of relying solely on connection counts, you can run a lightweight orches
 
 ```mermaid
 flowchart LR
-    InstanceA[crpc-go Node A] -->|Metrics 1s| Orchestrator[Autoscaler Brain]
-    InstanceB[crpc-go Node B] -->|Metrics 1s| Orchestrator
-    Orchestrator -->|CPU > 60% or RAM > 70%| FlyAPI[Fly Machines API]
-    FlyAPI -->|POST /v1/apps/.../machines| InstanceC[Spawn Node C]
+    InstanceA["crpc-go Node A"] -->|"Metrics 1s"| Orchestrator["Autoscaler Brain"]
+    InstanceB["crpc-go Node B"] -->|"Metrics 1s"| Orchestrator
+    Orchestrator -->|"CPU > 60% or RAM > 70%"| FlyAPI["Fly Machines API"]
+    FlyAPI -->|"POST /v1/apps/.../machines"| InstanceC["Spawn Node C"]
 ```
 
 This guarantees that compute-intensive tasks scale dynamically based on true resource exhaustion.
