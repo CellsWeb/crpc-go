@@ -1,0 +1,67 @@
+site_name: CellsWeb RPC Go
+site_description: High-Performance RPC API Framework for Go, fasthttp, and TypeScript/Node.js
+site_author: CellsWeb
+site_url: https://cellsweb.github.io/crpc-go/
+
+repo_name: CellsWeb/crpc-go
+repo_url: https://github.com/CellsWeb/crpc-go
+
+theme:
+  name: material
+  language: en
+  palette:
+    # Palette toggle for dark mode
+    - scheme: slate
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/weather-sunny
+        name: Switch to light mode
+    # Palette toggle for light mode
+    - scheme: default
+      primary: cyan
+      accent: cyan
+      toggle:
+        icon: material/weather-night
+        name: Switch to dark mode
+  features:
+    - navigation.tabs
+    - navigation.sections
+    - navigation.top
+    - search.suggest
+    - search.highlight
+    - content.code.copy
+    - content.code.annotate
+
+markdown_extensions:
+  - admonition
+  - pymdownx.details
+  - pymdownx.superfences:
+      custom_fences:
+        - name: mermaid
+          class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.highlight:
+      anchor_linenums: true
+      line_spans: __span
+      pygments_lang_class: true
+  - pymdownx.inlinehilite
+  - pymdownx.snippets
+  - tables
+  - attr_list
+  - md_in_html
+
+nav:
+  - Home: index.md
+  - Getting Started: getting-started.md
+  - Architecture: architecture.md
+  - Functions & Contracts: functions.md
+  - Middlewares & Context: middlewares.md
+  - Node.js & Next.js IPC: node-ipc.md
+  - Custom HTTP Routes: custom-routes.md
+  - Integration Testing: testing.md
+  - Interactive Docs UI: interactive-docs.md
+  - API Reference: api-reference.md
+  - Deployment & Autoscaling: deployment.md

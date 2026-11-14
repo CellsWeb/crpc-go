@@ -1,0 +1,17 @@
+{
+  "name": "crpc-go-node-example",
+  "version": "1.0.0",
+  "description": "Node.js IPC client for CellsWeb RPC Go",
+  "type": "module",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "dev": "tsx watch src/index.ts",
+    "build": "tsc"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.5.0"
+  }
+}

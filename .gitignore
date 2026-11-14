@@ -37,3 +37,6 @@ public/uploads/*
 example-mongo/public/uploads/*
 !example-mongo/public/uploads/.gitkeep
 tmp/
+site/
+example-node/node_modules/
+example-node/dist/

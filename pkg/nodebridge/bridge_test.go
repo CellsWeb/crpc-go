@@ -41,16 +41,18 @@ func TestServeUnixSocket_WithContextAndSkipMiddlewares(t *testing.T) {
 		t.Fatalf("Failed to create rpc app: %v", err)
 	}
 
-	// Register a middleware that sets user
+	// Register a middleware that sets user under its middleware name "bridgeAuth"
 	app.RegisterMiddleware("bridgeAuth", "Requires valid token", func(c *rpc.Context, headers map[string]string, options map[string]any) error {
 		if headers["x-token"] != "valid" {
 			return rpc.NewError("unauthorized", "Invalid token")
 		}
-		c.Set("user", map[string]any{"id": "usr_mw", "role": "admin"})
+		c.Set("bridgeAuth", map[string]any{
+			"user": map[string]any{"id": "usr_mw", "role": "admin"},
+		})
 		return nil
 	}, nil, nil)
 
-	// Register function that reads from context
+	// Register function that reads from context under middleware name
 	rpc.Register(rpc.FunctionConfig[BridgeTestInput, BridgeTestOutput]{
 		Namespace:    "bridgeTest",
 		FunctionName: "getProfile",
@@ -60,9 +62,14 @@ func TestServeUnixSocket_WithContextAndSkipMiddlewares(t *testing.T) {
 			rpc.M("bridgeAuth", map[string]any{}),
 		),
 		Handler: func(c *rpc.Context, input BridgeTestInput) (*BridgeTestOutput, error) {
-			u, _ := c.Get("user")
+			var user any
+			if authVal, ok := c.Get("bridgeAuth"); ok {
+				if authMap, ok := authVal.(map[string]any); ok {
+					user = authMap["user"]
+				}
+			}
 			return &BridgeTestOutput{
-				User: u,
+				User: user,
 				Echo: input.Msg,
 			}, nil
 		},
@@ -122,7 +129,9 @@ func TestServeUnixSocket_WithContextAndSkipMiddlewares(t *testing.T) {
 		Data:            map[string]any{"msg": "direct call"},
 		SkipMiddlewares: true,
 		Context: map[string]any{
-			"user": map[string]any{"id": "usr_injected", "role": "superadmin"},
+			"bridgeAuth": map[string]any{
+				"user": map[string]any{"id": "usr_injected", "role": "superadmin"},
+			},
 		},
 	}
 	reqBytes2, _ := json.Marshal(req2)

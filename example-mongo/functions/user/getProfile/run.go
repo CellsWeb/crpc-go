@@ -17,9 +17,21 @@ func init() {
 }
 
 func Run(ctx *rpc.Context, input Input) (*Output, error) {
-	_ = time.Now()
+	userID := input.ID
+
+	// Extract authenticated user namespaced under "auth" middleware
+	if authVal, ok := ctx.Get("auth"); ok {
+		if authMap, ok := authVal.(map[string]any); ok {
+			if userMap, ok := authMap["user"].(map[string]any); ok {
+				if id, ok := userMap["id"].(string); ok && userID == "" {
+					userID = id
+				}
+			}
+		}
+	}
+
 	return &Output{
-		ID:        input.ID,
+		ID:        userID,
 		Status:    "active",
 		Timestamp: time.Now().Unix(),
 	}, nil
