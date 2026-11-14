@@ -15,8 +15,10 @@ const (
 	ErrNotFound      = "not_found"
 	ErrInvalidBody   = "invalid_body"
 	ErrPayloadTooLarge = "payload_too_large"
-	ErrRateLimited   = "rate_limited"
-	ErrInternal      = "internal_error"
+	ErrConflict        = "conflict"
+	ErrRateLimited     = "rate_limited"
+	ErrTimeout         = "timeout"
+	ErrInternal        = "internal_error"
 )
 
 // ValidationErrorDetail alias to schema.ValidationErrorDetail

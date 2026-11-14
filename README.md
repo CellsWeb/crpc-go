@@ -25,21 +25,24 @@
 ## 📑 Table of Contents
 
 1. [Why CellsWeb RPC Go?](#-why-cellsweb-rpc-go)
-2. [CLI Installation & Project Scaffolding](#-cli-installation--project-scaffolding)
-3. [Server Entrypoint (`main.go`)](#-server-entrypoint-maingo)
-4. [Project Architecture & File Co-Location](#-project-architecture--file-co-location)
-5. [How to Write RPC Functions](#-how-to-write-rpc-functions)
+2. [Why CellsWeb RPC Go?](#-why-cellsweb-rpc-go)
+3. [CellsWeb RPC vs Connect-RPC vs tRPC vs Twirp](#-cellsweb-rpc-vs-connect-rpc-vs-trpc-vs-twirp)
+4. [CLI Installation & Project Scaffolding](#-cli-installation--project-scaffolding)
+5. [Server Entrypoint (`main.go`)](#-server-entrypoint-maingo)
+6. [Project Architecture & File Co-Location](#-project-architecture--file-co-location)
+7. [How to Write RPC Functions](#-how-to-write-rpc-functions)
    - [Standard JSON Function](#1-standard-json-rpc-function)
    - [Multipart Form-Data & File Uploads](#2-multipart-file-upload-function)
-6. [Writing & Attaching Middlewares](#-writing--attaching-middlewares)
-7. [In-Process Testing with Zero Network Sockets](#-in-process-testing-with-zero-network-sockets)
-8. [Connecting from Frontend Clients (`@cellsweb/rpc-client`)](#-connecting-from-frontend-clients-cellswebrpc-client)
-9. [Connecting to Node.js & Next.js Monorepos](#-connecting-to-nodejs--nextjs-monorepos)
-10. [Built-in Server-Rendered Interactive Docs (`/docs`)](#-server-rendered-interactive-docs-docs)
-11. [Uniform Protocol Specification & Error Codes](#-uniform-protocol-specification--error-codes)
-12. [Production Deployment & Fly.io Autoscaling](#-production-deployment--flyio-autoscaling)
-13. [Best Practices & What to Avoid](#-best-practices--what-to-avoid)
-14. [Benchmarks](#-benchmarks)
+8. [Writing & Attaching Middlewares](#-writing--attaching-middlewares)
+9. [In-Process Testing with Zero Network Sockets](#-in-process-testing-with-zero-network-sockets)
+10. [Configurable HTTP Status Codes & APM Mode](#-configurable-http-status-codes--apm-mode)
+11. [Connecting from Frontend Clients (`@cellsweb/rpc-client`)](#-connecting-from-frontend-clients-cellswebrpc-client)
+12. [Connecting to Node.js & Next.js Monorepos](#-connecting-to-nodejs--nextjs-monorepos)
+13. [Built-in Server-Rendered Interactive Docs (`/docs`)](#-server-rendered-interactive-docs-docs)
+14. [Uniform Protocol Specification & Error Codes](#-uniform-protocol-specification--error-codes)
+15. [Production Deployment & Fly.io Autoscaling](#-production-deployment--flyio-autoscaling)
+16. [Best Practices & What to Avoid](#-best-practices--what-to-avoid)
+17. [Battle-Tested Benchmarks & Attack Survival](#-battle-tested-benchmarks--attack-survival)
 
 ---
 
@@ -52,6 +55,27 @@
 - **Multi-Phase Streaming Multipart Engine**: Phase 1 early routing inspects keys and executes authentication middlewares *before* streaming large file uploads to disk.
 - **Zero-Config Interactive Docs (`/docs`)**: Pure server-rendered dark theme documentation UI with 2-column schema view, recursive fields breakdown, copyable cURL commands, and central middleware catalog — with **zero third-party UI dependencies**.
 - **First-Class Frontend & Monorepo Interop**: Direct drop-in compatibility with React/React Native hooks (`useRpcQuery`, `useRpcMutation`), Next.js server actions, and high-speed local IPC bridges (stdio & Unix Domain Sockets).
+
+---
+
+## ⚖️ CellsWeb RPC vs Connect-RPC vs tRPC vs Twirp
+
+Why choose CellsWeb RPC over existing RPC technologies?
+
+| Capability / Feature | CellsWeb RPC (`crpc`) | Connect-RPC | tRPC | Twirp |
+| :--- | :--- | :--- | :--- | :--- |
+| **Go & TypeScript Parity** | **Yes** (100% interoperable wire format) | Yes (via Protobuf) | No (TypeScript/JS only) | Yes (via Protobuf) |
+| **Zero-Codegen Client** | **Yes** (Dynamic client SDK, no build step) | No (Requires `buf generate`) | Yes (TypeScript types only) | No (Requires `protoc`) |
+| **Single Endpoint (`/rpc`)** | **Yes** (Unified routing & proxy configuration) | No (Endpoint per RPC method) | No (Endpoint per procedure) | No (Endpoint per method) |
+| **Zero-Config Live Docs UI** | **Yes** (Server-rendered dark theme `/docs`) | No (Requires third-party tools) | No (Third-party OpenAPI) | No |
+| **Multipart File Streaming** | **Yes** (Streaming intake, Web & RN objects) | Complex (bytes in proto payload) | Complex (Custom FormData) | Complex (bytes in proto) |
+| **In-Process Testing Engine** | **Yes** (`NewTestCaller` / zero socket) | No (Requires network listener) | Yes (caller) | No (Network listener) |
+| **Dual HTTP Status Mode** | **Yes** (Uniform 200 or standard APM codes) | No (gRPC status codes) | No (HTTP error codes) | No (HTTP error codes) |
+| **Go 1.27 JSON v2 Standard**| **Yes** (Enforced, zero-allocation serialization) | No | N/A | No |
+
+### The Core Advantage:
+- **No Protobuf Compilation Ceremony**: Connect-RPC and Twirp require maintaining `.proto` definition files, installing compilers, and regenerating code whenever a field changes. CellsWeb RPC uses pure Go structs on the backend and native TypeScript contracts on the frontend.
+- **True Multi-Language Monorepos**: Unlike tRPC (which locks you into TypeScript), CellsWeb RPC lets you write high-performance Go microservices while seamlessly consuming them from React, Next.js, or React Native with identical client semantics.
 
 ---
 
@@ -483,7 +507,40 @@ func TestUserProfileCall(t *testing.T) {
 
 ---
 
-## 🌐 Connecting from Frontend Clients (`@cellsweb/rpc-client`)
+## 🚦 Configurable HTTP Status Codes & APM Mode
+
+By default, CellsWeb RPC maintains a uniform **HTTP 200** envelope for all responses (including validation and business errors). However, for enterprise infrastructure requiring native HTTP status codes for SRE metrics, APM tracing (Datadog, OpenTelemetry), and reverse proxy routing:
+
+Enable `UseHttpStatusCodes: true` in your server configuration:
+
+```go
+app := rpc.New(rpc.Config{
+    UseHttpStatusCodes: true, // Emits 400, 401, 403, 404, 429, 500
+})
+```
+
+### Error Code to HTTP Status Mapping:
+| Protocol Error Code | HTTP Status | APM & Reverse Proxy Behavior |
+| :--- | :--- | :--- |
+| `validation_error`, `schema_mismatch`, `invalid_body` | **400 Bad Request** | Counted as client error (4xx) |
+| `unauthorized` | **401 Unauthorized** | Triggers frontend re-auth / login redirect |
+| `forbidden` | **403 Forbidden** | Access denied |
+| `not_found`, `unknown_function` | **404 Not Found** | Unregistered endpoint |
+| `payload_too_large` | **413 Payload Too Large** | Upload size exceeded |
+| `rate_limit_exceeded` | **429 Too Many Requests** | Upstream rate limiting |
+| `internal_error` | **500 Internal Server Error** | Alerts on-call engineering |
+
+The JSON response envelope remains 100% identical and compatible with `@cellsweb/rpc-client`:
+```json
+{
+  "status": "error",
+  "code": "validation_error",
+  "message": "Field 'email' is required",
+  "meta": { "requestId": "req-102", "durationMs": 0.12 }
+}
+```
+
+---
 
 `crpc-go` is 100% compatible with the official React and React Native client SDK:
 
@@ -844,18 +901,33 @@ primary_region = "syd"
 
 ---
 
-## 📈 Benchmarks
+## 📈 Battle-Tested Benchmarks & Attack Survival
 
-Single-core performance tested on `GOMAXPROCS=1` against `public.hello` (`autocannon -c 100 -d 10`):
+A comprehensive benchmark harness and adversarial attack suite is available in the [`benchmarks/`](./benchmarks) directory.
 
-| Metric | Node.js (v24) | Bun (v1.3) | Go (`crpc-go`) | Go Improvement |
-| :--- | :--- | :--- | :--- | :--- |
-| **Throughput (Avg)** | 4,364 req/sec | 4,362 req/sec | **68,909 req/sec** | **⚡ 15.8x Faster** |
-| **Average Latency** | 22.40 ms | 22.42 ms | **0.99 ms** | **⚡ 22.6x Lower Latency** |
-| **p99 Tail Latency** | 28.00 ms | 45.00 ms | **2.00 ms** | **⚡ 14x – 22x Lower** |
-| **Worst-Case Spikes** | 604.00 ms | 105.00 ms | **22.00 ms** | **⚡ Zero Stutter** |
-| **RAM Footprint (RSS)** | 233.0 MB | 207.8 MB | **14.8 MB** | **⚡ 1/16th Memory Usage** |
-| **Docker 256MB Tier** | Crashed (OOM) | Crashed (OOM) | **18,981 req/sec** | **Rock Solid** |
+### Multi-Engine Throughput Comparison (50,000 Requests, 100 Concurrency)
+Tested on Apple Silicon M-series (macOS Darwin arm64 / Linux Docker arm64) using `oha`:
+
+| Engine / Runtime | Environment | Throughput (Req/sec) | Avg Latency | p99 Latency | RSS Memory |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`crpc-go` (fasthttp + JSON v2)** | **Host Native (Unconstrained)** | **89,719 req/s** | **1.08 ms** | **2.67 ms** | **36.8 MiB** |
+| **`crpc-go` (fasthttp + JSON v2)** | **Docker 4 CPUs, 4GB RAM** | **67,171 req/s** | **1.48 ms** | **2.94 ms** | **12.6 MiB** |
+| **`crpc-go` (fasthttp + JSON v2)** | **Docker 2 CPUs, 1GB RAM** | **66,447 req/s** | **1.48 ms** | **3.01 ms** | **11.8 MiB** |
+| **`crpc-go` (fasthttp + JSON v2)** | **Docker 1 CPU, 256MB RAM** | **53,592 req/s** | **1.83 ms** | **3.89 ms** | **12.4 MiB** |
+| **`crpc-node` (`bun.serve`)** | **Bun v1.3.1 (Native Fetch)** | **7,236 req/s** | **13.75 ms** | **27.60 ms** | **94.2 MiB** |
+| **`crpc-node` (`elysiaPlugin`)** | **Bun v1.3.1 (Elysia.js)** | **6,840 req/s** | **14.54 ms** | **28.40 ms** | **98.6 MiB** |
+| **`crpc-node` (`fastifyPlugin`)** | **Node.js v24.2 (Fastify)** | **6,199 req/s** | **16.04 ms** | **31.10 ms** | **142.1 MiB** |
+| **`crpc-node` (`node:http`)** | **Node.js v24.2 (Native HTTP)** | **6,187 req/s** | **16.06 ms** | **30.90 ms** | **148.8 MiB** |
+| **`crpc-node` (`express`)** | **Node.js v24.2 (Express)** | **6,016 req/s** | **16.53 ms** | **32.80 ms** | **153.4 MiB** |
+| **`crpc-node` (`honoPlugin`)** | **Node.js v24.2 (Hono)** | **5,622 req/s** | **17.69 ms** | **33.70 ms** | **158.2 MiB** |
+
+### 🛡️ Adversarial Attack & Fuzzing Verification
+- **Adversarial Rate-Limit Flood**: Flooded with 2,000 requests in <0.04s. Exactly 100 allowed (HTTP 200), 1,900 repelled (HTTP 429), 0 server crashes.
+- **Go 1.27 JSON v2 Duplicate Key Rejection**: Hostile duplicate key injections (`{"role":"user","role":"admin"}`) are rejected at parse time with `duplicate object member name`.
+- **High Concurrency Saturation**: 2,000 active concurrent connections sustained with zero socket drops.
+- **Payload Streaming Guard**: 50MB random byte stream rejected immediately with HTTP 413 `payload_too_large`.
+
+For full scripts and reproduction instructions, see [benchmarks/README.md](./benchmarks/README.md) and [benchmarks/RESULTS.md](./benchmarks/RESULTS.md).
 
 ---
 

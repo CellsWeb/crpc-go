@@ -1,7 +1,7 @@
 package rpc
 
 import (
-	"encoding/json"
+	"encoding/json/v2"
 	"fmt"
 	"net"
 	"net/http"
@@ -407,9 +407,38 @@ func (app *CoreRPC) sendErrorResponse(reqCtx *fasthttp.RequestCtx, requestID, co
 			DurationMs: duration,
 		},
 	}
-	reqCtx.SetStatusCode(fasthttp.StatusOK) // Always uniform HTTP 200
+	statusCode := fasthttp.StatusOK
+	if app.config.UseHttpStatusCodes {
+		statusCode = mapErrorCodeToHTTPStatus(code)
+	}
+	reqCtx.SetStatusCode(statusCode)
 	reqCtx.SetContentType("application/json")
 	_ = jsonMarshalToCtx(reqCtx, envelope)
+}
+
+func mapErrorCodeToHTTPStatus(code string) int {
+	switch code {
+	case ErrValidation, ErrInvalidBody:
+		return fasthttp.StatusBadRequest
+	case ErrUnauthorized:
+		return fasthttp.StatusUnauthorized
+	case ErrForbidden:
+		return fasthttp.StatusForbidden
+	case ErrNotFound:
+		return fasthttp.StatusNotFound
+	case ErrConflict:
+		return fasthttp.StatusConflict
+	case ErrPayloadTooLarge:
+		return fasthttp.StatusRequestEntityTooLarge
+	case ErrRateLimited:
+		return fasthttp.StatusTooManyRequests
+	case ErrTimeout:
+		return fasthttp.StatusGatewayTimeout
+	case ErrInternal:
+		return fasthttp.StatusInternalServerError
+	default:
+		return fasthttp.StatusInternalServerError
+	}
 }
 
 func (app *CoreRPC) dispatchError(reqCtx *fasthttp.RequestCtx, requestID string, err error, start time.Time) {
@@ -480,13 +509,12 @@ func (app *CoreRPC) handleCorsPreflight(reqCtx *fasthttp.RequestCtx) {
 	reqCtx.SetStatusCode(fasthttp.StatusNoContent)
 }
 
-// JSON Serialization via pooled buffer
+// JSON Serialization via pooled buffer using Go 1.27 encoding/json/v2
 func jsonMarshalToCtx(reqCtx *fasthttp.RequestCtx, v any) error {
 	buf := bytebufferpool.Get()
 	defer bytebufferpool.Put(buf)
 
-	enc := json.NewEncoder(buf)
-	if err := enc.Encode(v); err != nil {
+	if err := json.MarshalWrite(buf, v); err != nil {
 		return err
 	}
 	reqCtx.SetBody(buf.Bytes())

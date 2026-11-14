@@ -56,6 +56,11 @@ type Config struct {
 	// MaxMultipartFiles is the maximum total number of files allowed in a single multipart request (default: 20).
 	MaxMultipartFiles int
 
+	// UseHttpStatusCodes maps RPC error codes to standard HTTP status codes (e.g. 400, 401, 404, 429, 500)
+	// for enhanced integration with cloud monitoring, load balancers, and APM tools.
+	// Defaults to false (standard uniform HTTP 200 RPC protocol).
+	UseHttpStatusCodes bool
+
 	// TelemetryHooks are optional callbacks for external metrics, Sentry, or batch loggers
 	TelemetryHooks []TelemetryHook
 

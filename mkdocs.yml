@@ -69,4 +69,5 @@ nav:
       - Interactive Docs UI: interactive-docs.md
   - Reference & Ops:
       - Go API Reference: api-reference.md
+      - Benchmarks & Comparison: benchmarks.md
       - Deployment & Autoscaling: deployment.md
