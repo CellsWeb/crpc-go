@@ -25,8 +25,8 @@ theme:
         icon: material/weather-night
         name: Switch to dark mode
   features:
-    - navigation.tabs
     - navigation.sections
+    - navigation.expand
     - navigation.top
     - search.suggest
     - search.highlight
@@ -54,14 +54,18 @@ markdown_extensions:
   - md_in_html
 
 nav:
-  - Home: index.md
-  - Getting Started: getting-started.md
-  - Architecture: architecture.md
-  - Functions & Contracts: functions.md
-  - Middlewares & Context: middlewares.md
-  - Node.js & Next.js IPC: node-ipc.md
-  - Custom HTTP Routes: custom-routes.md
-  - Integration Testing: testing.md
-  - Interactive Docs UI: interactive-docs.md
-  - API Reference: api-reference.md
-  - Deployment & Autoscaling: deployment.md
+  - Overview:
+      - Introduction: index.md
+      - Getting Started: getting-started.md
+      - Architecture & Lifecycle: architecture.md
+  - Core Guides:
+      - Functions & Contracts: functions.md
+      - Middlewares & Context: middlewares.md
+      - Custom HTTP Routes: custom-routes.md
+  - Fullstack & Tooling:
+      - Node.js & Next.js IPC: node-ipc.md
+      - Integration Testing: testing.md
+      - Interactive Docs UI: interactive-docs.md
+  - Reference & Ops:
+      - Go API Reference: api-reference.md
+      - Deployment & Autoscaling: deployment.md
