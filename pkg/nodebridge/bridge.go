@@ -18,6 +18,7 @@ type BridgeRequest struct {
 	Data            map[string]any    `json:"data"`
 	Headers         map[string]string `json:"headers,omitempty"`
 	SkipMiddlewares bool              `json:"skipMiddlewares,omitempty"`
+	Context         map[string]any    `json:"context,omitempty"`
 }
 
 // BridgeResponse represents the IPC response returned to Node.js
@@ -53,6 +54,7 @@ func ServeStdio(app *rpc.CoreRPC) error {
 		err := app.CallInMemory(req.Function, req.Data, &output, rpc.CallOptions{
 			Headers:         req.Headers,
 			SkipMiddlewares: req.SkipMiddlewares,
+			ContextData:     req.Context,
 		})
 
 		if err != nil {
@@ -119,6 +121,7 @@ func handleSocketConn(app *rpc.CoreRPC, conn net.Conn) {
 		callErr := app.CallInMemory(req.Function, req.Data, &output, rpc.CallOptions{
 			Headers:         req.Headers,
 			SkipMiddlewares: req.SkipMiddlewares,
+			ContextData:     req.Context,
 		})
 
 		if callErr != nil {
