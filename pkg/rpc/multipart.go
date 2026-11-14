@@ -42,10 +42,24 @@ func ParseMultipartPhase1(reqCtx *fasthttp.RequestCtx) (namespace, functionName 
 }
 
 // ParseMultipartPhase2 extracts all remaining fields and binary files after middlewares have verified access
-func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64) (*ParsedMultipartData, error) {
+func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFiles ...int) (*ParsedMultipartData, error) {
 	form, err := reqCtx.MultipartForm()
 	if err != nil {
 		return nil, NewError(ErrInvalidBody, fmt.Sprintf("Failed to parse multipart fields: %v", err))
+	}
+
+	limitFiles := 20
+	if len(maxFiles) > 0 && maxFiles[0] > 0 {
+		limitFiles = maxFiles[0]
+	}
+
+	// Guard against DoS / memory exhaustion: count total files before reading byte streams
+	totalFiles := 0
+	for _, fileHeaders := range form.File {
+		totalFiles += len(fileHeaders)
+	}
+	if limitFiles > 0 && totalFiles > limitFiles {
+		return nil, NewError(ErrPayloadTooLarge, fmt.Sprintf("Exceeded maximum allowed files limit (%d)", limitFiles))
 	}
 
 	data := make(map[string]any)
@@ -66,6 +80,7 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64) (*Par
 
 	// Extract binary files
 	for fieldName, fileHeaders := range form.File {
+		var fieldFiles []any
 		for _, fh := range fileHeaders {
 			if maxSizeBytes > 0 && fh.Size > maxSizeBytes {
 				return nil, NewError(ErrPayloadTooLarge, fmt.Sprintf("File %q exceeds max allowed size of %d bytes", fh.Filename, maxSizeBytes))
@@ -83,7 +98,13 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64) (*Par
 
 			uploaded := NewUploadedFile(fh.Filename, mimeType, fileContent, "")
 			files = append(files, uploaded)
-			data[fieldName] = uploaded
+			fieldFiles = append(fieldFiles, uploaded)
+		}
+
+		if len(fieldFiles) == 1 {
+			data[fieldName] = fieldFiles[0]
+		} else if len(fieldFiles) > 1 {
+			data[fieldName] = fieldFiles
 		}
 	}
 

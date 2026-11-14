@@ -99,17 +99,28 @@ var InputSchema = schema.FromStruct(Input{})
 CellsWeb RPC separates file upload validation directly into dedicated schema rules:
 
 ```go
+// Single File Upload
 var AvatarSchema = schema.File().
 	MaxSize(10 * 1024 * 1024).                          // 10 Megabytes max
 	AllowedMimes("image/jpeg", "image/png", "image/webp").
 	Describe("High-resolution avatar graphic")
+
+// Multiple File Uploads with Max Count
+var GallerySchema = schema.Array(
+	schema.File().MaxSize(5 * 1024 * 1024).AllowedMimes("image/png", "image/jpeg"),
+).MinFiles(1).MaxFiles(5).Describe("1 to 5 gallery images")
 ```
 
 | Method | Example | Description |
 | :--- | :--- | :--- |
-| `.MaxSize(int64)` | `.MaxSize(5 * 1024 * 1024)` | Strict byte size limit (enforced during stream) |
+| `.MaxSize(int64)` | `.MaxSize(5 * 1024 * 1024)` | Strict byte size limit per file |
 | `.AllowedMimes(...)` | `.AllowedMimes("application/pdf")` | Whitelist of permitted MIME types |
+| `.MinFiles(int)` / `.Min(int)` | `.MinFiles(1)` | Minimum number of files in an array |
+| `.MaxFiles(int)` / `.Max(int)` | `.MaxFiles(5)` | Maximum number of files in an array |
 | `schema.Optional(...)` | `schema.Optional(schema.File())` | Marks file upload as optional |
+
+> [!TIP]
+> The server also enforces a global `MaxMultipartFiles` (default: 20, matching `crpc-node`) in `rpc.Config` to prevent DoS attacks before reading byte streams into memory.
 
 ---
 

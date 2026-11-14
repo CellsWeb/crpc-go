@@ -59,3 +59,60 @@ func TestValidateStrictUnknownFields(t *testing.T) {
 		t.Fatalf("Expected error path '/extra', got %q", errs[0].Path)
 	}
 }
+
+type mockFile struct {
+	name string
+	mime string
+	size int64
+}
+
+func (m mockFile) Filename() string { return m.name }
+func (m mockFile) MimeType() string { return m.mime }
+func (m mockFile) Size() int64      { return m.size }
+
+func TestFileAndArrayValidation(t *testing.T) {
+	rule := schema.Object(map[string]*schema.SchemaRule{
+		"avatar": schema.File().MaxSize(1024).AllowedMimes("image/png"),
+		"photos": schema.Array(schema.File().AllowedMimes("image/jpeg")).MinFiles(1).MaxFiles(3),
+	})
+
+	// 1. Valid single file and array of files
+	validPayload := map[string]any{
+		"avatar": mockFile{name: "a.png", mime: "image/png", size: 500},
+		"photos": []any{
+			mockFile{name: "p1.jpg", mime: "image/jpeg", size: 200},
+			mockFile{name: "p2.jpg", mime: "image/jpeg", size: 300},
+		},
+	}
+	errs := schema.Validate(rule, validPayload, "")
+	if len(errs) > 0 {
+		t.Fatalf("Expected valid, got errors: %v", errs)
+	}
+
+	// 2. Avatar exceeding size
+	oversizedPayload := map[string]any{
+		"avatar": mockFile{name: "a.png", mime: "image/png", size: 2048},
+		"photos": []any{
+			mockFile{name: "p1.jpg", mime: "image/jpeg", size: 200},
+		},
+	}
+	errs = schema.Validate(rule, oversizedPayload, "")
+	if len(errs) != 1 || errs[0].Path != "/avatar" {
+		t.Fatalf("Expected /avatar size error, got: %v", errs)
+	}
+
+	// 3. Photos exceeding max file count (4 files when max is 3)
+	tooManyFiles := map[string]any{
+		"avatar": mockFile{name: "a.png", mime: "image/png", size: 500},
+		"photos": []any{
+			mockFile{name: "p1.jpg", mime: "image/jpeg", size: 100},
+			mockFile{name: "p2.jpg", mime: "image/jpeg", size: 100},
+			mockFile{name: "p3.jpg", mime: "image/jpeg", size: 100},
+			mockFile{name: "p4.jpg", mime: "image/jpeg", size: 100},
+		},
+	}
+	errs = schema.Validate(rule, tooManyFiles, "")
+	if len(errs) != 1 || errs[0].Path != "/photos" {
+		t.Fatalf("Expected /photos max files error, got: %v", errs)
+	}
+}

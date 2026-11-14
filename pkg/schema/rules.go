@@ -107,6 +107,18 @@ func (r *SchemaRule) Max(max int) *SchemaRule {
 	return r
 }
 
+// MinFiles sets the minimum file count constraint on an array of files
+func (r *SchemaRule) MinFiles(min int) *SchemaRule {
+	r.MinLength = &min
+	return r
+}
+
+// MaxFiles sets the maximum file count constraint on an array of files
+func (r *SchemaRule) MaxFiles(max int) *SchemaRule {
+	r.MaxLength = &max
+	return r
+}
+
 func (r *SchemaRule) Email() *SchemaRule {
 	r.Format = "email"
 	return r
@@ -174,6 +186,52 @@ func FromStruct(s any) *SchemaRule {
 		rule := ruleFromType(field.Type)
 		rule.Description = desc
 		rule.Optional = isOptional
+
+		if minStr := field.Tag.Get("min"); minStr != "" {
+			var minVal int
+			if _, err := fmt.Sscanf(minStr, "%d", &minVal); err == nil {
+				rule.MinLength = &minVal
+			}
+		}
+		if minFilesStr := field.Tag.Get("min_files"); minFilesStr != "" {
+			var minFilesVal int
+			if _, err := fmt.Sscanf(minFilesStr, "%d", &minFilesVal); err == nil {
+				rule.MinLength = &minFilesVal
+			}
+		}
+		if maxStr := field.Tag.Get("max"); maxStr != "" {
+			var maxVal int
+			if _, err := fmt.Sscanf(maxStr, "%d", &maxVal); err == nil {
+				rule.MaxLength = &maxVal
+			}
+		}
+		if maxFilesStr := field.Tag.Get("max_files"); maxFilesStr != "" {
+			var maxFilesVal int
+			if _, err := fmt.Sscanf(maxFilesStr, "%d", &maxFilesVal); err == nil {
+				rule.MaxLength = &maxFilesVal
+			}
+		}
+		if maxSizeStr := field.Tag.Get("max_size"); maxSizeStr != "" {
+			var maxSizeVal int64
+			if _, err := fmt.Sscanf(maxSizeStr, "%d", &maxSizeVal); err == nil {
+				if rule.Type == TypeArray && rule.Items != nil && rule.Items.Type == TypeFile {
+					rule.Items.MaxSizeBytes = maxSizeVal
+				} else {
+					rule.MaxSizeBytes = maxSizeVal
+				}
+			}
+		}
+		if mimesStr := field.Tag.Get("mimes"); mimesStr != "" {
+			parts := strings.Split(mimesStr, ",")
+			for i, p := range parts {
+				parts[i] = strings.TrimSpace(p)
+			}
+			if rule.Type == TypeArray && rule.Items != nil && rule.Items.Type == TypeFile {
+				rule.Items.MimeTypes = parts
+			} else {
+				rule.MimeTypes = parts
+			}
+		}
 
 		if !isOptional {
 			required = append(required, fieldName)

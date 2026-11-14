@@ -2,6 +2,7 @@ package schema
 
 import (
 	"fmt"
+	"reflect"
 	"regexp"
 	"strings"
 )
@@ -142,14 +143,59 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 		}
 
 	case TypeArray:
-		arr, ok := data.([]any)
-		if !ok {
+		var arr []any
+		switch v := data.(type) {
+		case []any:
+			arr = v
+		case []string:
+			arr = make([]any, len(v))
+			for i, s := range v {
+				arr[i] = s
+			}
+		case []int:
+			arr = make([]any, len(v))
+			for i, n := range v {
+				arr[i] = n
+			}
+		case []float64:
+			arr = make([]any, len(v))
+			for i, n := range v {
+				arr[i] = n
+			}
+		default:
+			if fileVal, ok := data.(FileValidator); ok && rule.Items != nil && rule.Items.Type == TypeFile {
+				// Single file coerced to 1-item array for multipart array fields
+				arr = []any{fileVal}
+			} else {
+				val := reflect.ValueOf(data)
+				if val.IsValid() && (val.Kind() == reflect.Slice || val.Kind() == reflect.Array) {
+					arr = make([]any, val.Len())
+					for i := 0; i < val.Len(); i++ {
+						arr[i] = val.Index(i).Interface()
+					}
+				} else {
+					details = append(details, ValidationErrorDetail{
+						Path:    currentPath,
+						Message: fmt.Sprintf("Expected array, got %T", data),
+					})
+					return details
+				}
+			}
+		}
+
+		if rule.MinLength != nil && len(arr) < *rule.MinLength {
 			details = append(details, ValidationErrorDetail{
 				Path:    currentPath,
-				Message: fmt.Sprintf("Expected array, got %T", data),
+				Message: fmt.Sprintf("Array must contain at least %d items", *rule.MinLength),
 			})
-			return details
 		}
+		if rule.MaxLength != nil && len(arr) > *rule.MaxLength {
+			details = append(details, ValidationErrorDetail{
+				Path:    currentPath,
+				Message: fmt.Sprintf("Array must contain at most %d items", *rule.MaxLength),
+			})
+		}
+
 		if rule.Items != nil {
 			for i, item := range arr {
 				elemPath := fmt.Sprintf("%s/%d", currentPath, i)

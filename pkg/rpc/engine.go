@@ -349,7 +349,7 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 	}
 
 	// Phase 3: Extract form data and files
-	parsed, err := ParseMultipartPhase2(reqCtx, int64(app.config.MaxRequestBodySize))
+	parsed, err := ParseMultipartPhase2(reqCtx, int64(app.config.MaxRequestBodySize), app.config.MaxMultipartFiles)
 	if err != nil {
 		app.dispatchError(reqCtx, ctx.RequestID(), err, start)
 		return

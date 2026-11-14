@@ -53,6 +53,9 @@ type Config struct {
 	// MaxRequestBodySize in bytes (e.g. 10 * 1024 * 1024 for 10MB).
 	MaxRequestBodySize int
 
+	// MaxMultipartFiles is the maximum total number of files allowed in a single multipart request (default: 20).
+	MaxMultipartFiles int
+
 	// TelemetryHooks are optional callbacks for external metrics, Sentry, or batch loggers
 	TelemetryHooks []TelemetryHook
 
@@ -88,6 +91,10 @@ func (c *Config) Validate() error {
 
 	if c.MaxRequestBodySize <= 0 {
 		c.MaxRequestBodySize = 10 * 1024 * 1024 // 10 MB default cap
+	}
+
+	if c.MaxMultipartFiles <= 0 {
+		c.MaxMultipartFiles = 20 // 20 files default limit (aligning with rpc-core / Busboy)
 	}
 
 	return nil
