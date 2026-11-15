@@ -1,6 +1,7 @@
 package schema
 
 import (
+	"encoding/json/v2"
 	"fmt"
 	"math"
 	"reflect"
@@ -41,6 +42,18 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 		case map[string]any:
 			objMap = v
 		default:
+			// Marshal to JSON and unmarshal to intermediate map to ensure custom MarshalJSON,
+			// omitempty tags, and embedded structs are validated against their authentic wire format.
+			if b, err := json.Marshal(data); err == nil {
+				var normalized any
+				if err := json.Unmarshal(b, &normalized); err == nil {
+					if m, ok := normalized.(map[string]any); ok {
+						objMap = m
+						break
+					}
+				}
+			}
+
 			val := reflect.ValueOf(data)
 			if val.Kind() == reflect.Ptr {
 				val = val.Elem()

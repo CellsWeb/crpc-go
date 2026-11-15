@@ -332,6 +332,11 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 	headerNs := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Namespace")))
 	headerFn := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Function")))
 
+	if (headerNs != "" && headerFn == "") || (headerNs == "" && headerFn != "") {
+		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, "Both X-CRPC-Namespace and X-CRPC-Function headers must be provided together, or both omitted", nil, start)
+		return
+	}
+
 	var ns, fnName string
 	var err error
 
@@ -380,6 +385,14 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 	if err != nil {
 		app.dispatchError(reqCtx, ctx.RequestID(), err, start)
 		return
+	}
+
+	// Invariant: Verify consistency between headers and body if both are present
+	if headerNs != "" && (parsed.Namespace != "" || parsed.FunctionName != "") {
+		if parsed.Namespace != headerNs || parsed.FunctionName != headerFn {
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, fmt.Sprintf("Routing mismatch: headers specify %q but payload specifies %q", FormatFunctionKey(headerNs, headerFn), FormatFunctionKey(parsed.Namespace, parsed.FunctionName)), nil, start)
+			return
+		}
 	}
 
 	for _, f := range parsed.Files {

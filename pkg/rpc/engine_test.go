@@ -341,3 +341,81 @@ func TestTelemetryPanicIsolation(t *testing.T) {
 		t.Fatalf("Expected telemetry hook to be called")
 	}
 }
+
+func TestDualModeRoutingProtocolInvariants(t *testing.T) {
+	app, err := rpc.New(rpc.Config{
+		RpcPath: "/rpc",
+		CORS:    &rpc.CorsConfig{AllowOrigins: []string{"*"}},
+	})
+	if err != nil {
+		t.Fatalf("Failed creating app: %v", err)
+	}
+
+	rpc.Register(rpc.FunctionConfig[map[string]any, map[string]any]{
+		Namespace:    "doc",
+		FunctionName: "upload",
+		Handler: func(ctx *rpc.Context, input map[string]any) (*map[string]any, error) {
+			res := map[string]any{"ok": true}
+			return &res, nil
+		},
+	})
+	app.UseGlobalRegistry()
+	handler := app.Handler()
+
+	// 1. Partial headers: X-CRPC-Namespace present, X-CRPC-Function missing -> ErrInvalidBody
+	{
+		var ctx fasthttp.RequestCtx
+		ctx.Request.Header.SetMethod("POST")
+		ctx.Request.SetRequestURI("/rpc")
+		ctx.Request.Header.SetContentType("multipart/form-data; boundary=boundary123")
+		ctx.Request.Header.Set("X-CRPC-Namespace", "doc")
+		ctx.Request.SetBody([]byte("--boundary123\r\nContent-Disposition: form-data; name=\"namespace\"\r\n\r\ndoc\r\n--boundary123--\r\n"))
+		handler(&ctx)
+
+		body := string(ctx.Response.Body())
+		if !strings.Contains(body, "invalid_body") || !strings.Contains(body, "Both X-CRPC-Namespace and X-CRPC-Function headers must be provided together") {
+			t.Fatalf("Expected partial header rejection with invalid_body, got: %s", body)
+		}
+	}
+
+	// 2. Routing mismatch: headers specify doc.upload, body specifies admin.delete -> ErrInvalidBody
+	{
+		var ctx fasthttp.RequestCtx
+		ctx.Request.Header.SetMethod("POST")
+		ctx.Request.SetRequestURI("/rpc")
+		ctx.Request.Header.SetContentType("multipart/form-data; boundary=boundary456")
+		ctx.Request.Header.Set("X-CRPC-Namespace", "doc")
+		ctx.Request.Header.Set("X-CRPC-Function", "upload")
+
+		mismatchBody := "--boundary456\r\nContent-Disposition: form-data; name=\"namespace\"\r\n\r\nadmin\r\n" +
+			"--boundary456\r\nContent-Disposition: form-data; name=\"functionName\"\r\n\r\ndelete\r\n" +
+			"--boundary456--\r\n"
+		ctx.Request.SetBody([]byte(mismatchBody))
+		handler(&ctx)
+
+		body := string(ctx.Response.Body())
+		if !strings.Contains(body, "invalid_body") || !strings.Contains(body, "Routing mismatch") {
+			t.Fatalf("Expected routing mismatch rejection with invalid_body, got: %s", body)
+		}
+	}
+
+	// 3. File part arrives before routing fields -> ErrInvalidBody
+	{
+		var ctx fasthttp.RequestCtx
+		ctx.Request.Header.SetMethod("POST")
+		ctx.Request.SetRequestURI("/rpc")
+		ctx.Request.Header.SetContentType("multipart/form-data; boundary=boundary789")
+
+		fileFirstBody := "--boundary789\r\nContent-Disposition: form-data; name=\"file\"; filename=\"test.txt\"\r\nContent-Type: text/plain\r\n\r\nhello world\r\n" +
+			"--boundary789\r\nContent-Disposition: form-data; name=\"namespace\"\r\n\r\ndoc\r\n" +
+			"--boundary789\r\nContent-Disposition: form-data; name=\"functionName\"\r\n\r\nupload\r\n" +
+			"--boundary789--\r\n"
+		ctx.Request.SetBody([]byte(fileFirstBody))
+		handler(&ctx)
+
+		body := string(ctx.Response.Body())
+		if !strings.Contains(body, "invalid_body") || !strings.Contains(body, "Routing fields ('namespace', 'functionName') must appear before file parts") {
+			t.Fatalf("Expected file-before-routing rejection with invalid_body, got: %s", body)
+		}
+	}
+}

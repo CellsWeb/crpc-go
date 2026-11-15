@@ -1,8 +1,10 @@
 package rpc
 
 import (
+	"bytes"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
@@ -18,18 +20,48 @@ type ParsedMultipartData struct {
 	Files        []*UploadedFile
 }
 
-// ParseMultipartPhase1 parses only the routing keys (namespace, functionName) from multipart stream
+// ParseMultipartPhase1 parses only the routing keys (namespace, functionName) from multipart stream without reading any files
 func ParseMultipartPhase1(reqCtx *fasthttp.RequestCtx) (namespace, functionName string, err error) {
-	form, err := reqCtx.MultipartForm()
-	if err != nil {
-		return "", "", NewError(ErrInvalidBody, fmt.Sprintf("Malformed multipart form: %v", err))
+	boundary := string(reqCtx.Request.Header.MultipartFormBoundary())
+	if boundary == "" {
+		return "", "", NewError(ErrInvalidBody, "Missing multipart boundary in Content-Type")
 	}
 
-	if vals, ok := form.Value["namespace"]; ok && len(vals) > 0 {
-		namespace = vals[0]
-	}
-	if vals, ok := form.Value["functionName"]; ok && len(vals) > 0 {
-		functionName = vals[0]
+	mr := multipart.NewReader(bytes.NewReader(reqCtx.PostBody()), boundary)
+
+	for {
+		part, err := mr.NextPart()
+		if err != nil {
+			break
+		}
+
+		// Reject file parts that appear before routing fields
+		if part.FileName() != "" && (namespace == "" || functionName == "") {
+			return "", "", NewError(ErrInvalidBody, "Routing fields ('namespace', 'functionName') must appear before file parts in multipart payload")
+		}
+
+		fieldName := part.FormName()
+		if fieldName == "namespace" && namespace == "" {
+			buf := make([]byte, 129)
+			n, _ := io.ReadFull(part, buf)
+			if n > 128 {
+				return "", "", NewError(ErrInvalidBody, "namespace field exceeds 128 characters")
+			}
+			namespace = string(buf[:n])
+		} else if fieldName == "functionName" && functionName == "" {
+			buf := make([]byte, 129)
+			n, _ := io.ReadFull(part, buf)
+			if n > 128 {
+				return "", "", NewError(ErrInvalidBody, "functionName field exceeds 128 characters")
+			}
+			functionName = string(buf[:n])
+		}
+
+		// Halt parsing the stream immediately once both routing keys are resolved
+		// Zero file parts are read or persisted to disk
+		if namespace != "" && functionName != "" {
+			break
+		}
 	}
 
 	if namespace == "" || functionName == "" {
@@ -65,6 +97,13 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 	}
 
 	data := make(map[string]any)
+	var bodyNs, bodyFn string
+	if len(form.Value["namespace"]) > 0 {
+		bodyNs = form.Value["namespace"][0]
+	}
+	if len(form.Value["functionName"]) > 0 {
+		bodyFn = form.Value["functionName"][0]
+	}
 
 	// Extract standard text values
 	for k, vals := range form.Value {
@@ -155,7 +194,9 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 	}
 
 	return &ParsedMultipartData{
-		Data:  data,
-		Files: files,
+		Namespace:    bodyNs,
+		FunctionName: bodyFn,
+		Data:         data,
+		Files:        files,
 	}, nil
 }
