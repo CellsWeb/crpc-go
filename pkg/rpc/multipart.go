@@ -31,8 +31,11 @@ func ParseMultipartPhase1(reqCtx *fasthttp.RequestCtx) (namespace, functionName 
 
 	for {
 		part, err := mr.NextPart()
-		if err != nil {
+		if err == io.EOF {
 			break
+		}
+		if err != nil {
+			return "", "", NewError(ErrInvalidBody, fmt.Sprintf("Malformed multipart stream: %v", err))
 		}
 
 		// Reject file parts that appear before routing fields

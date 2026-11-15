@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"fmt"
 	"math"
 	"testing"
 
@@ -158,5 +159,33 @@ func TestUnicodeStringLength(t *testing.T) {
 	errs = schema.Validate(rule, map[string]any{"name": "বাংলাদেশ"}, "")
 	if len(errs) == 0 {
 		t.Fatalf("Expected 6-rune string to be rejected by Max(5)")
+	}
+}
+
+type CustomStringID struct {
+	ID string
+}
+
+func (c CustomStringID) MarshalJSON() ([]byte, error) {
+	return []byte(fmt.Sprintf("%q", c.ID)), nil
+}
+
+func TestCustomJsonMarshalerWireRepresentationValidation(t *testing.T) {
+	// Rule expects a String
+	stringRule := schema.String().Min(3)
+
+	customID := CustomStringID{ID: "usr_123"}
+	errs := schema.Validate(stringRule, customID, "")
+	if len(errs) > 0 {
+		t.Fatalf("Expected CustomStringID to validate as string on wire, got errors: %v", errs)
+	}
+
+	// Rule expects an Object: CustomStringID emits a string on the wire, so it MUST fail Object validation
+	objectRule := schema.Object(map[string]*schema.SchemaRule{
+		"ID": schema.String(),
+	})
+	errs = schema.Validate(objectRule, customID, "")
+	if len(errs) == 0 {
+		t.Fatalf("Expected CustomStringID emitting string on wire to be rejected by Object schema")
 	}
 }

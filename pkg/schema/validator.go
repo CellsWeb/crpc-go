@@ -35,6 +35,25 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 		return details
 	}
 
+	// If data is a struct or pointer-to-struct, normalize it to its authentic JSON wire representation
+	// so that custom MarshalJSON, omitempty tags, and embedded fields are validated exactly as clients receive them.
+	if data != nil {
+		val := reflect.ValueOf(data)
+		kind := val.Kind()
+		if kind == reflect.Ptr && !val.IsNil() {
+			val = val.Elem()
+			kind = val.Kind()
+		}
+		if kind == reflect.Struct {
+			if b, err := json.Marshal(data); err == nil {
+				var normalized any
+				if err := json.Unmarshal(b, &normalized); err == nil {
+					data = normalized
+				}
+			}
+		}
+	}
+
 	switch rule.Type {
 	case TypeObject:
 		var objMap map[string]any
@@ -42,18 +61,6 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 		case map[string]any:
 			objMap = v
 		default:
-			// Marshal to JSON and unmarshal to intermediate map to ensure custom MarshalJSON,
-			// omitempty tags, and embedded structs are validated against their authentic wire format.
-			if b, err := json.Marshal(data); err == nil {
-				var normalized any
-				if err := json.Unmarshal(b, &normalized); err == nil {
-					if m, ok := normalized.(map[string]any); ok {
-						objMap = m
-						break
-					}
-				}
-			}
-
 			val := reflect.ValueOf(data)
 			if val.Kind() == reflect.Ptr {
 				val = val.Elem()
