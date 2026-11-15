@@ -235,7 +235,12 @@ func (app *CoreRPC) handleRpcRequest(reqCtx *fasthttp.RequestCtx) {
 		return
 	}
 
-	app.handleJsonRPC(reqCtx, ctx, start)
+	if cType == "" || strings.HasPrefix(cType, "application/json") {
+		app.handleJsonRPC(reqCtx, ctx, start)
+		return
+	}
+
+	app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidContentType, fmt.Sprintf("Unsupported Content-Type %q: expected application/json or multipart/form-data", cType), nil, start)
 }
 
 // JSON RPC Dispatcher
@@ -249,9 +254,9 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 
 	// Parse JSON RPC payload envelope
 	var payload struct {
-		Namespace    string         `json:"namespace"`
-		FunctionName string         `json:"functionName"`
-		Data         map[string]any `json:"data"`
+		Namespace    string `json:"namespace"`
+		FunctionName string `json:"functionName"`
+		Data         any    `json:"data"`
 	}
 
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
@@ -283,7 +288,7 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 	app.mu.RUnlock()
 
 	if !exists {
-		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrNotFound, fmt.Sprintf("Function %q not found", functionKey), nil, start)
+		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrFunctionNotFound, fmt.Sprintf("Function %q not found in registry", functionKey), nil, start)
 		return
 	}
 
@@ -319,7 +324,7 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 	// Validate output schema
 	if fn.OutputSchema != nil && result != nil {
 		if valErrors := schema.Validate(fn.OutputSchema, result, ""); len(valErrors) > 0 {
-			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInternal, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrSchemaMismatch, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
 			return
 		}
 	}
@@ -363,7 +368,7 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 	app.mu.RUnlock()
 
 	if !exists {
-		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrNotFound, fmt.Sprintf("Function %q not found", functionKey), nil, start)
+		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrFunctionNotFound, fmt.Sprintf("Function %q not found in registry", functionKey), nil, start)
 		return
 	}
 
@@ -417,7 +422,7 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 	// Validate output schema
 	if fn.OutputSchema != nil && result != nil {
 		if valErrors := schema.Validate(fn.OutputSchema, result, ""); len(valErrors) > 0 {
-			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInternal, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrSchemaMismatch, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
 			return
 		}
 	}
@@ -504,13 +509,13 @@ func (app *CoreRPC) sendErrorResponse(reqCtx *fasthttp.RequestCtx, requestID, co
 
 func mapErrorCodeToHTTPStatus(code string) int {
 	switch code {
-	case ErrValidation, ErrInvalidBody:
+	case ErrValidation, ErrInvalidBody, ErrInvalidContentType:
 		return fasthttp.StatusBadRequest
 	case ErrUnauthorized:
 		return fasthttp.StatusUnauthorized
 	case ErrForbidden:
 		return fasthttp.StatusForbidden
-	case ErrNotFound:
+	case ErrNotFound, ErrFunctionNotFound:
 		return fasthttp.StatusNotFound
 	case ErrConflict:
 		return fasthttp.StatusConflict
@@ -520,7 +525,7 @@ func mapErrorCodeToHTTPStatus(code string) int {
 		return fasthttp.StatusTooManyRequests
 	case ErrTimeout:
 		return fasthttp.StatusGatewayTimeout
-	case ErrInternal:
+	case ErrInternal, ErrSchemaMismatch:
 		return fasthttp.StatusInternalServerError
 	default:
 		return fasthttp.StatusInternalServerError
@@ -587,7 +592,7 @@ func (app *CoreRPC) handleCorsPreflight(reqCtx *fasthttp.RequestCtx) {
 		if len(cors.AllowHeaders) > 0 {
 			reqCtx.Response.Header.Set("Access-Control-Allow-Headers", strings.Join(cors.AllowHeaders, ", "))
 		} else {
-			reqCtx.Response.Header.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With")
+			reqCtx.Response.Header.Set("Access-Control-Allow-Headers", "Content-Type, Authorization, X-Requested-With, X-CRPC-Namespace, X-CRPC-Function")
 		}
 
 		if cors.MaxAge > 0 {

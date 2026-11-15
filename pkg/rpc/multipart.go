@@ -2,12 +2,14 @@ package rpc
 
 import (
 	"bytes"
+	"encoding/json"
 	"fmt"
 	"io"
 	"mime/multipart"
 	"net/http"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/valyala/fasthttp"
 )
@@ -108,15 +110,38 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 		bodyFn = form.Value["functionName"][0]
 	}
 
+	parseJsonField := func(val string) any {
+		trimmed := strings.TrimSpace(val)
+		if (strings.HasPrefix(trimmed, "{") && strings.HasSuffix(trimmed, "}")) ||
+			(strings.HasPrefix(trimmed, "[") && strings.HasSuffix(trimmed, "]")) {
+			var parsed any
+			if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
+				return parsed
+			}
+		}
+		return val
+	}
+
 	// Extract standard text values
 	for k, vals := range form.Value {
 		if k == "namespace" || k == "functionName" {
 			continue
 		}
+		actualKey := k
+		if k == "_data_namespace" {
+			actualKey = "namespace"
+		} else if k == "_data_functionName" {
+			actualKey = "functionName"
+		}
+
 		if len(vals) == 1 {
-			data[k] = vals[0]
+			data[actualKey] = parseJsonField(vals[0])
 		} else {
-			data[k] = vals
+			var parsedArr []any
+			for _, v := range vals {
+				parsedArr = append(parsedArr, parseJsonField(v))
+			}
+			data[actualKey] = parsedArr
 		}
 	}
 
@@ -202,10 +227,30 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 			fieldFiles = append(fieldFiles, uploaded)
 		}
 
-		if len(fieldFiles) == 1 {
-			data[fieldName] = fieldFiles[0]
-		} else if len(fieldFiles) > 1 {
-			data[fieldName] = fieldFiles
+		actualKey := fieldName
+		if fieldName == "_data_namespace" {
+			actualKey = "namespace"
+		} else if fieldName == "_data_functionName" {
+			actualKey = "functionName"
+		}
+
+		existing, exists := data[actualKey]
+		if !exists {
+			if len(fieldFiles) == 1 {
+				data[actualKey] = fieldFiles[0]
+			} else {
+				data[actualKey] = fieldFiles
+			}
+		} else {
+			// Merge existing text value(s) with file(s) into a unified slice
+			var merged []any
+			if existingSlice, ok := existing.([]any); ok {
+				merged = append(merged, existingSlice...)
+			} else {
+				merged = append(merged, existing)
+			}
+			merged = append(merged, fieldFiles...)
+			data[actualKey] = merged
 		}
 	}
 

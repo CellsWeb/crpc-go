@@ -42,7 +42,7 @@ func Register[TInput any, TOutput any](cfg FunctionConfig[TInput, TOutput]) *Fun
 		cType = "application/json"
 	}
 
-	wrapped := func(ctx *Context, rawInput map[string]any) (any, error) {
+	wrapped := func(ctx *Context, rawInput any) (any, error) {
 		var input TInput
 
 		// If input is already of type TInput (e.g. from in-process caller)
@@ -58,7 +58,9 @@ func Register[TInput any, TOutput any](cfg FunctionConfig[TInput, TOutput]) *Fun
 		}
 
 		// Inject any UploadedFiles if TInput contains UploadedFile pointers
-		injectFilesIntoStruct(&input, rawInput)
+		if rawMap, ok := rawInput.(map[string]any); ok {
+			injectFilesIntoStruct(&input, rawMap)
+		}
 
 		return cfg.Handler(ctx, input)
 	}

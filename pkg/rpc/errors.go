@@ -9,16 +9,19 @@ import (
 
 // Standard Error Codes matching the CellsWeb RPC protocol
 const (
-	ErrValidation    = "validation_error"
-	ErrUnauthorized  = "unauthorized"
-	ErrForbidden     = "forbidden"
-	ErrNotFound      = "not_found"
-	ErrInvalidBody   = "invalid_body"
-	ErrPayloadTooLarge = "payload_too_large"
-	ErrConflict        = "conflict"
-	ErrRateLimited     = "rate_limited"
-	ErrTimeout         = "timeout"
-	ErrInternal        = "internal_error"
+	ErrValidation         = "validation_error"
+	ErrUnauthorized       = "unauthorized"
+	ErrForbidden          = "forbidden"
+	ErrNotFound           = "not_found"
+	ErrFunctionNotFound   = "function_not_found"
+	ErrInvalidBody        = "invalid_body"
+	ErrInvalidContentType = "invalid_content_type"
+	ErrPayloadTooLarge    = "payload_too_large"
+	ErrConflict           = "conflict"
+	ErrRateLimited        = "rate_limited"
+	ErrTimeout            = "timeout"
+	ErrInternal           = "internal_error"
+	ErrSchemaMismatch     = "schema_mismatch"
 )
 
 // ValidationErrorDetail alias to schema.ValidationErrorDetail

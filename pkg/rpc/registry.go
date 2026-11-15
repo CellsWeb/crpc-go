@@ -66,7 +66,7 @@ type FunctionDefinition struct {
 	InputSchema  *schema.SchemaRule
 	OutputSchema *schema.SchemaRule
 	Middlewares  []MiddlewareAttachment
-	Handler      func(ctx *Context, rawInput map[string]any) (any, error)
+	Handler      func(ctx *Context, rawInput any) (any, error)
 	InputType    reflect.Type
 }
 
