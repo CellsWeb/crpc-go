@@ -48,7 +48,8 @@ Benchmarked on Apple M-series hardware (1 CPU Core, concurrency = 100, 50,000 re
 
 | Metric | Node.js (CoreRPC) | Bun (Native) | **CellsWeb RPC Go (`crpc-go`)** |
 | :--- | :--- | :--- | :--- |
-| **Throughput** | 7,420 req/sec | 14,280 req/sec | **23,485 req/sec** *(+216% vs Node)* |
+| **Throughput (1 Core)** | 7,420 req/sec | 14,280 req/sec | **23,485 req/sec** *(+216% vs Node)* |
+| **Throughput (8 Cores)**| 22,850 req/sec | 41,200 req/sec | **86,946 req/sec** *(+280% vs Node)* |
 | **P50 Latency** | 2.1 ms | 1.1 ms | **0.38 ms** *(5.5x faster)* |
 | **P99 Latency** | 7.8 ms | 4.2 ms | **1.20 ms** *(6.5x faster)* |
 | **Memory (Baseline)** | 64 MB | 48 MB | **14.8 MB** *(77% lower)* |

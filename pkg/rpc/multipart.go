@@ -1,9 +1,11 @@
 package rpc
 
 import (
-	"bytes"
 	"fmt"
-	"mime/multipart"
+	"io"
+	"net/http"
+	"os"
+	"path/filepath"
 
 	"github.com/valyala/fasthttp"
 )
@@ -41,7 +43,7 @@ func ParseMultipartPhase1(reqCtx *fasthttp.RequestCtx) (namespace, functionName 
 	return namespace, functionName, nil
 }
 
-// ParseMultipartPhase2 extracts all remaining fields and binary files after middlewares have verified access
+// ParseMultipartPhase2 extracts all remaining fields and streams binary files directly to disk temp storage
 func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFiles ...int) (*ParsedMultipartData, error) {
 	form, err := reqCtx.MultipartForm()
 	if err != nil {
@@ -78,7 +80,13 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 
 	var files []*UploadedFile
 
-	// Extract binary files
+	// Ensure isolated temp upload directory exists with 0700 permissions
+	uploadDir := filepath.Join(os.TempDir(), "crpc-uploads")
+	if err := os.MkdirAll(uploadDir, 0700); err != nil {
+		return nil, NewError(ErrInternal, fmt.Sprintf("Failed creating temp upload directory: %v", err))
+	}
+
+	// Extract binary files by streaming directly to disk temp files (zero in-memory accumulation)
 	for fieldName, fileHeaders := range form.File {
 		var fieldFiles []any
 		for _, fh := range fileHeaders {
@@ -86,17 +94,55 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 				return nil, NewError(ErrPayloadTooLarge, fmt.Sprintf("File %q exceeds max allowed size of %d bytes", fh.Filename, maxSizeBytes))
 			}
 
-			fileContent, err := readMultipartFile(fh)
+			src, err := fh.Open()
 			if err != nil {
-				return nil, NewError(ErrInternal, fmt.Sprintf("Failed reading uploaded file %q: %v", fh.Filename, err))
+				return nil, NewError(ErrInternal, fmt.Sprintf("Failed opening uploaded file %q: %v", fh.Filename, err))
 			}
 
-			mimeType := fh.Header.Get("Content-Type")
-			if mimeType == "" {
-				mimeType = "application/octet-stream"
+			tempFile, err := os.CreateTemp(uploadDir, "upload-*")
+			if err != nil {
+				src.Close()
+				return nil, NewError(ErrInternal, fmt.Sprintf("Failed creating temp file for %q: %v", fh.Filename, err))
+			}
+			_ = os.Chmod(tempFile.Name(), 0600)
+
+			// Sniff initial 512 bytes for MIME detection
+			sniffBuf := make([]byte, 512)
+			n, err := io.ReadFull(src, sniffBuf)
+			if err != nil && err != io.EOF && err != io.ErrUnexpectedEOF {
+				src.Close()
+				tempFile.Close()
+				_ = os.Remove(tempFile.Name())
+				return nil, NewError(ErrInternal, fmt.Sprintf("Failed reading file header %q: %v", fh.Filename, err))
 			}
 
-			uploaded := NewUploadedFile(fh.Filename, mimeType, fileContent, "")
+			detectedMime := http.DetectContentType(sniffBuf[:n])
+			declaredMime := fh.Header.Get("Content-Type")
+			if declaredMime == "" {
+				declaredMime = "application/octet-stream"
+			}
+
+			// Write sniffed header to temp file
+			if n > 0 {
+				if _, err := tempFile.Write(sniffBuf[:n]); err != nil {
+					src.Close()
+					tempFile.Close()
+					_ = os.Remove(tempFile.Name())
+					return nil, NewError(ErrInternal, fmt.Sprintf("Failed writing to temp file for %q: %v", fh.Filename, err))
+				}
+			}
+
+			// Stream the remainder directly to disk
+			written, err := io.Copy(tempFile, src)
+			src.Close()
+			tempFile.Close()
+			if err != nil {
+				_ = os.Remove(tempFile.Name())
+				return nil, NewError(ErrInternal, fmt.Sprintf("Failed streaming uploaded file %q: %v", fh.Filename, err))
+			}
+
+			totalSize := int64(n) + written
+			uploaded := NewUploadedFileDetailed(fh.Filename, declaredMime, detectedMime, totalSize, nil, tempFile.Name())
 			files = append(files, uploaded)
 			fieldFiles = append(fieldFiles, uploaded)
 		}
@@ -112,18 +158,4 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 		Data:  data,
 		Files: files,
 	}, nil
-}
-
-func readMultipartFile(fh *multipart.FileHeader) ([]byte, error) {
-	f, err := fh.Open()
-	if err != nil {
-		return nil, err
-	}
-	defer f.Close()
-
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(f); err != nil {
-		return nil, err
-	}
-	return buf.Bytes(), nil
 }

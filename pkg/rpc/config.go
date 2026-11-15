@@ -66,6 +66,18 @@ type Config struct {
 
 	// TrustProxy determines whether X-Forwarded-For is trusted for client IP extraction
 	TrustProxy bool
+
+	// TrustedProxies is a list of trusted upstream proxy IP addresses or CIDRs
+	TrustedProxies []string
+
+	// ReadTimeout is the maximum duration for reading the entire request (default: 30s)
+	ReadTimeout time.Duration
+
+	// WriteTimeout is the maximum duration for writing the response (default: 30s)
+	WriteTimeout time.Duration
+
+	// IdleTimeout is the maximum amount of time to wait for the next request when keep-alives are enabled (default: 60s)
+	IdleTimeout time.Duration
 }
 
 // Validate ensures all mandatory configuration settings are present without ambiguous defaults
@@ -80,6 +92,14 @@ func (c *Config) Validate() error {
 
 	if c.CORS == nil {
 		return fmt.Errorf("crpc config error: CORS configuration is required. Please explicitly configure CORS or pass rpc.CorsConfig{AllowOrigins: []string{\"*\"}}")
+	}
+
+	if c.CORS.AllowCredentials {
+		for _, origin := range c.CORS.AllowOrigins {
+			if strings.TrimSpace(origin) == "*" {
+				return fmt.Errorf("crpc config error: wildcard origin '*' cannot be used when AllowCredentials is true")
+			}
+		}
 	}
 
 	if c.DocsEnabled && strings.TrimSpace(c.DocsPath) == "" {
@@ -100,6 +120,16 @@ func (c *Config) Validate() error {
 
 	if c.MaxMultipartFiles <= 0 {
 		c.MaxMultipartFiles = 20 // 20 files default limit (aligning with rpc-core / Busboy)
+	}
+
+	if c.ReadTimeout <= 0 {
+		c.ReadTimeout = 30 * time.Second
+	}
+	if c.WriteTimeout <= 0 {
+		c.WriteTimeout = 30 * time.Second
+	}
+	if c.IdleTimeout <= 0 {
+		c.IdleTimeout = 60 * time.Second
 	}
 
 	return nil

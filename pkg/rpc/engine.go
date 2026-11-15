@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"net"
 	"net/http"
@@ -206,6 +207,9 @@ func (app *CoreRPC) Handler() fasthttp.RequestHandler {
 // NetHTTPHandler provides standard net/http.Handler compatibility
 func (app *CoreRPC) NetHTTPHandler() http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if app.config.MaxRequestBodySize > 0 && r.Body != nil {
+			r.Body = http.MaxBytesReader(w, r.Body, int64(app.config.MaxRequestBodySize))
+		}
 		var reqCtx fasthttp.RequestCtx
 		fasthttpadaptor.ConvertNetHTTPRequestToFastHTTPRequest(r, &reqCtx.Request)
 		app.Handler()(&reqCtx)
@@ -312,16 +316,39 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 		return
 	}
 
+	// Validate output schema
+	if fn.OutputSchema != nil && result != nil {
+		if valErrors := schema.Validate(fn.OutputSchema, result, ""); len(valErrors) > 0 {
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInternal, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
+			return
+		}
+	}
+
 	app.sendSuccessResponse(reqCtx, ctx.RequestID(), result, start)
 }
 
 // Multipart Form-Data RPC Dispatcher (Multi-phase)
 func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, start time.Time) {
-	// Phase 1: Quick extract namespace & functionName
-	ns, fnName, err := ParseMultipartPhase1(reqCtx)
-	if err != nil {
-		app.dispatchError(reqCtx, ctx.RequestID(), err, start)
-		return
+	headerNs := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Namespace")))
+	headerFn := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Function")))
+
+	var ns, fnName string
+	var err error
+
+	if headerNs != "" && headerFn != "" {
+		if !isValidRoutingIdentifier(headerNs) || !isValidRoutingIdentifier(headerFn) {
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, "Invalid characters in X-CRPC-Namespace or X-CRPC-Function header", nil, start)
+			return
+		}
+		ns = headerNs
+		fnName = headerFn
+	} else {
+		// Phase 1 fallback: Quick extract namespace & functionName from body stream
+		ns, fnName, err = ParseMultipartPhase1(reqCtx)
+		if err != nil {
+			app.dispatchError(reqCtx, ctx.RequestID(), err, start)
+			return
+		}
 	}
 
 	functionKey := FormatFunctionKey(ns, fnName)
@@ -348,7 +375,7 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 		}
 	}
 
-	// Phase 3: Extract form data and files
+	// Phase 3: Extract form data and files (stream directly to disk temp storage)
 	parsed, err := ParseMultipartPhase2(reqCtx, int64(app.config.MaxRequestBodySize), app.config.MaxMultipartFiles)
 	if err != nil {
 		app.dispatchError(reqCtx, ctx.RequestID(), err, start)
@@ -375,6 +402,14 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 		return
 	}
 
+	// Validate output schema
+	if fn.OutputSchema != nil && result != nil {
+		if valErrors := schema.Validate(fn.OutputSchema, result, ""); len(valErrors) > 0 {
+			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInternal, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)), valErrors, start)
+			return
+		}
+	}
+
 	app.sendSuccessResponse(reqCtx, ctx.RequestID(), result, start)
 }
 
@@ -383,7 +418,12 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 func (app *CoreRPC) triggerTelemetry(event TelemetryEvent) {
 	for _, hook := range app.config.TelemetryHooks {
 		if hook != nil {
-			hook(event)
+			func() {
+				defer func() {
+					_ = recover()
+				}()
+				hook(event)
+			}()
 		}
 	}
 }
@@ -400,7 +440,9 @@ func (app *CoreRPC) sendSuccessResponse(reqCtx *fasthttp.RequestCtx, requestID s
 	}
 	reqCtx.SetStatusCode(fasthttp.StatusOK)
 	reqCtx.SetContentType("application/json")
-	_ = jsonMarshalToCtx(reqCtx, envelope)
+	if err := jsonMarshalToCtx(reqCtx, envelope); err != nil {
+		reqCtx.SetBodyString(`{"status":"error","code":"internal_error","message":"Failed to serialize response"}`)
+	}
 
 	if len(app.config.TelemetryHooks) > 0 {
 		app.triggerTelemetry(TelemetryEvent{
@@ -431,7 +473,9 @@ func (app *CoreRPC) sendErrorResponse(reqCtx *fasthttp.RequestCtx, requestID, co
 	}
 	reqCtx.SetStatusCode(statusCode)
 	reqCtx.SetContentType("application/json")
-	_ = jsonMarshalToCtx(reqCtx, envelope)
+	if err := jsonMarshalToCtx(reqCtx, envelope); err != nil {
+		reqCtx.SetBodyString(`{"status":"error","code":"internal_error","message":"Failed to serialize response"}`)
+	}
 
 	if len(app.config.TelemetryHooks) > 0 {
 		app.triggerTelemetry(TelemetryEvent{
@@ -476,7 +520,8 @@ func (app *CoreRPC) dispatchError(reqCtx *fasthttp.RequestCtx, requestID string,
 	msg := err.Error()
 	var details []ValidationErrorDetail
 
-	if appErr, ok := err.(*AppError); ok {
+	var appErr *AppError
+	if errors.As(err, &appErr) {
 		code = appErr.Code
 		msg = appErr.Message
 		details = appErr.Details
@@ -497,16 +542,17 @@ func (app *CoreRPC) applyCorsHeaders(reqCtx *fasthttp.RequestCtx) {
 	if len(cors.AllowOrigins) > 0 {
 		allowed := false
 		for _, o := range cors.AllowOrigins {
-			if o == "*" || o == origin {
+			if o == origin || (o == "*" && !cors.AllowCredentials) {
 				allowed = true
 				break
 			}
 		}
 		if allowed {
-			if len(cors.AllowOrigins) == 1 && cors.AllowOrigins[0] == "*" {
+			if len(cors.AllowOrigins) == 1 && cors.AllowOrigins[0] == "*" && !cors.AllowCredentials {
 				reqCtx.Response.Header.Set("Access-Control-Allow-Origin", "*")
 			} else {
 				reqCtx.Response.Header.Set("Access-Control-Allow-Origin", origin)
+				reqCtx.Response.Header.Add("Vary", "Origin")
 			}
 		}
 	}
@@ -551,6 +597,21 @@ func jsonMarshalToCtx(reqCtx *fasthttp.RequestCtx, v any) error {
 	return nil
 }
 
+// Serve starts the server on the provided listener without installing OS signal handlers
+func (app *CoreRPC) Serve(ln net.Listener) error {
+	app.listener = ln
+	if app.server == nil {
+		app.server = &fasthttp.Server{
+			Handler:            app.Handler(),
+			MaxRequestBodySize: app.config.MaxRequestBodySize,
+			ReadTimeout:        app.config.ReadTimeout,
+			WriteTimeout:       app.config.WriteTimeout,
+			IdleTimeout:        app.config.IdleTimeout,
+		}
+	}
+	return app.server.Serve(ln)
+}
+
 // ListenAndServe starts the server with graceful shutdown handling
 func (app *CoreRPC) ListenAndServe() error {
 	addr := fmt.Sprintf("%s:%d", app.config.Host, app.config.Port)
@@ -558,26 +619,26 @@ func (app *CoreRPC) ListenAndServe() error {
 	if err != nil {
 		return err
 	}
-	app.listener = ln
 
 	app.server = &fasthttp.Server{
 		Handler:            app.Handler(),
 		MaxRequestBodySize: app.config.MaxRequestBodySize,
-		ReadTimeout:        30 * time.Second,
-		WriteTimeout:       30 * time.Second,
-		IdleTimeout:        60 * time.Second,
+		ReadTimeout:        app.config.ReadTimeout,
+		WriteTimeout:       app.config.WriteTimeout,
+		IdleTimeout:        app.config.IdleTimeout,
 	}
 
 	// Graceful shutdown channel
 	shutdown := make(chan os.Signal, 1)
 	signal.Notify(shutdown, syscall.SIGINT, syscall.SIGTERM)
+	defer signal.Stop(shutdown)
 
 	go func() {
 		<-shutdown
 		_ = app.Shutdown()
 	}()
 
-	return app.server.Serve(ln)
+	return app.Serve(ln)
 }
 
 var validIdentifierRegex = regexp.MustCompile(`^[a-zA-Z0-9_]+([.-][a-zA-Z0-9_]+)*$`)

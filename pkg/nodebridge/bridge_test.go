@@ -122,17 +122,11 @@ func TestServeUnixSocket_WithContextAndSkipMiddlewares(t *testing.T) {
 		t.Fatalf("Expected ok, got: %s (err: %s)", resp1.Status, resp1.Error)
 	}
 
-	// Test 2: Call with SkipMiddlewares and Context injection
+	// Test 2: Call without required auth header (MUST be rejected with unauthorized)
 	req2 := BridgeRequest{
-		ID:              "req-2",
-		Function:        "bridgeTest.getProfile",
-		Data:            map[string]any{"msg": "direct call"},
-		SkipMiddlewares: true,
-		Context: map[string]any{
-			"bridgeAuth": map[string]any{
-				"user": map[string]any{"id": "usr_injected", "role": "superadmin"},
-			},
-		},
+		ID:       "req-2",
+		Function: "bridgeTest.getProfile",
+		Data:     map[string]any{"msg": "unauthenticated call"},
 	}
 	reqBytes2, _ := json.Marshal(req2)
 	writer.Write(append(reqBytes2, '\n'))
@@ -146,16 +140,17 @@ func TestServeUnixSocket_WithContextAndSkipMiddlewares(t *testing.T) {
 	if err := json.Unmarshal(line2, &resp2); err != nil {
 		t.Fatalf("Failed to parse response 2: %v", err)
 	}
-	if resp2.Status != "ok" {
-		t.Fatalf("Expected ok, got: %s (err: %s)", resp2.Status, resp2.Error)
+	if resp2.Status != "error" {
+		t.Fatalf("Expected error status for unauthenticated call, got: %s", resp2.Status)
 	}
 
-	dataMap, ok := resp2.Data.(map[string]any)
-	if !ok {
-		t.Fatalf("Expected map in response data, got %T", resp2.Data)
+	// Test 3: Verify socket permissions are 0600
+	fi, err := os.Stat(sockPath)
+	if err != nil {
+		t.Fatalf("Failed to stat socket: %v", err)
 	}
-	userMap, ok := dataMap["user"].(map[string]any)
-	if !ok || userMap["id"] != "usr_injected" {
-		t.Fatalf("Expected injected user 'usr_injected', got: %v", dataMap["user"])
+	perm := fi.Mode().Perm()
+	if perm != 0600 {
+		t.Fatalf("Expected socket permissions 0600, got %04o", perm)
 	}
 }

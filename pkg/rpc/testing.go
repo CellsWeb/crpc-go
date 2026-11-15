@@ -2,6 +2,7 @@ package rpc
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"time"
 
@@ -10,9 +11,8 @@ import (
 
 // TestOptions configures test execution parameters
 type TestOptions struct {
-	Headers     map[string]string
-	ClientIP    string
-	ContextData map[string]any
+	Headers  map[string]string
+	ClientIP string
 }
 
 // TestCaller provides direct in-process RPC test execution with zero network socket binding
@@ -36,9 +36,8 @@ func NewTestCaller(app *CoreRPC, defaultOptions ...TestOptions) *TestCaller {
 // Call executes the RPC function in-process, unwraps data into outputTarget or returns an AppError
 func (tc *TestCaller) Call(functionKey string, input any, outputTarget any) error {
 	return tc.app.CallInMemory(functionKey, input, outputTarget, CallOptions{
-		Headers:     tc.defaultOptions.Headers,
-		ClientIP:    tc.defaultOptions.ClientIP,
-		ContextData: tc.defaultOptions.ContextData,
+		Headers:  tc.defaultOptions.Headers,
+		ClientIP: tc.defaultOptions.ClientIP,
 	})
 }
 
@@ -51,9 +50,6 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 		}
 		if customOpts[0].ClientIP != "" {
 			opts.ClientIP = customOpts[0].ClientIP
-		}
-		if customOpts[0].ContextData != nil {
-			opts.ContextData = customOpts[0].ContextData
 		}
 	}
 
@@ -85,9 +81,6 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 	}
 	if ctx.headers == nil {
 		ctx.headers = make(map[string]string)
-	}
-	for k, v := range opts.ContextData {
-		ctx.Set(k, v)
 	}
 
 	// Run middlewares
@@ -168,7 +161,8 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 		code := ErrInternal
 		msg := err.Error()
 		var details []ValidationErrorDetail
-		if appErr, ok := err.(*AppError); ok {
+		var appErr *AppError
+		if errors.As(err, &appErr) {
 			code = appErr.Code
 			msg = appErr.Message
 			details = appErr.Details

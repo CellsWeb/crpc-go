@@ -14,7 +14,7 @@ CellsWeb RPC Go compiles to a single, static binary with zero runtime dependenci
 
 ```dockerfile
 # Stage 1: Build the static Go binary
-FROM golang:1.22-alpine AS builder
+FROM golang:1.27-alpine AS builder
 WORKDIR /app
 
 RUN apk add --no-cache git ca-certificates tzdata
@@ -73,17 +73,18 @@ primary_region = "iad"
 
 ## 📐 Understanding Concurrency: Little's Law
 
-Developers often ask why `soft_limit = 2500` is used when Go can handle 20,000+ requests per second.
+In production load balancers (such as Fly.io, Envoy, or AWS ALB), `concurrency` measures **simultaneous active in-flight requests ($L$)**, not throughput ($\lambda$):
 
-`concurrency` measures **simultaneous active in-flight socket executions**, not throughput:
+$$\lambda = \frac{L}{W}$$
 
-$$\text{Throughput (req/sec)} = \frac{\text{Concurrency}}{\text{Average Latency (seconds)}}$$
+Where:
+- $L$ = Number of concurrent in-flight requests
+- $\lambda$ = Request throughput (requests per second)
+- $W$ = Average request service duration (seconds)
 
-At **4ms average database latency**:
+For example, if your average database query latency ($W$) is 25ms ($0.025\text{s}$), a concurrency limit of $L = 250$ sustains up to $\lambda = \frac{250}{0.025\text{s}} = 10,000 \text{ req/sec}$ before queuing begins. 
 
-$$\text{Throughput} = \frac{2500}{0.004\text{s}} = \mathbf{625,000 \text{ req/sec}}$$
-
-A soft limit of 2,500 ensures that a single machine comfortably handles up to 625,000 requests per second before the proxy routes traffic to a newly spawned instance.
+Configuring appropriate soft and hard concurrency limits ensures the proxy horizontally scales new instances to absorb traffic spikes without exceeding database connection pool limits or starving CPU threads.
 
 ---
 

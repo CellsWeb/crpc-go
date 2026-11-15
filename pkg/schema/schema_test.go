@@ -1,6 +1,7 @@
 package schema_test
 
 import (
+	"math"
 	"testing"
 
 	"github.com/CellsWeb/crpc-go/pkg/schema"
@@ -114,5 +115,48 @@ func TestFileAndArrayValidation(t *testing.T) {
 	errs = schema.Validate(rule, tooManyFiles, "")
 	if len(errs) != 1 || errs[0].Path != "/photos" {
 		t.Fatalf("Expected /photos max files error, got: %v", errs)
+	}
+}
+
+func TestIntegerFractionalAndInfinityValidation(t *testing.T) {
+	rule := schema.Object(map[string]*schema.SchemaRule{
+		"count": schema.Integer().Min(1).Max(100),
+	})
+
+	// Valid integer
+	errs := schema.Validate(rule, map[string]any{"count": 42}, "")
+	if len(errs) > 0 {
+		t.Fatalf("Expected valid integer, got %v", errs)
+	}
+
+	// Fractional float passed to TypeInteger -> must be rejected
+	errs = schema.Validate(rule, map[string]any{"count": 2.75}, "")
+	if len(errs) == 0 {
+		t.Fatalf("Expected fractional float 2.75 to be rejected by TypeInteger")
+	}
+
+	// NaN and Inf checks
+	errs = schema.Validate(rule, map[string]any{"count": math.Inf(1)}, "")
+	if len(errs) == 0 {
+		t.Fatalf("Expected infinity to be rejected")
+	}
+}
+
+func TestUnicodeStringLength(t *testing.T) {
+	rule := schema.Object(map[string]*schema.SchemaRule{
+		"name": schema.String().Min(2).Max(5),
+	})
+
+	// 3-rune unicode string (multi-byte runes like emojis or Bengali/Japanese)
+	// "বাংলা" is 5 runes, but 15 bytes in UTF-8
+	errs := schema.Validate(rule, map[string]any{"name": "বাংলা"}, "")
+	if len(errs) > 0 {
+		t.Fatalf("Expected 5-rune unicode string to pass, got %v", errs)
+	}
+
+	// Too many runes (6 runes)
+	errs = schema.Validate(rule, map[string]any{"name": "বাংলাদেশ"}, "")
+	if len(errs) == 0 {
+		t.Fatalf("Expected 6-rune string to be rejected by Max(5)")
 	}
 }

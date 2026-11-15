@@ -2,9 +2,11 @@ package schema
 
 import (
 	"fmt"
+	"math"
 	"reflect"
 	"regexp"
 	"strings"
+	"unicode/utf8"
 )
 
 var emailRegex = regexp.MustCompile(`^[a-zA-Z0-9._%+\-]+@[a-zA-Z0-9.\-]+\.[a-zA-Z]{2,}$`)
@@ -34,13 +36,40 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 
 	switch rule.Type {
 	case TypeObject:
-		objMap, ok := data.(map[string]any)
-		if !ok {
-			details = append(details, ValidationErrorDetail{
-				Path:    currentPath,
-				Message: fmt.Sprintf("Expected object, got %T", data),
-			})
-			return details
+		var objMap map[string]any
+		switch v := data.(type) {
+		case map[string]any:
+			objMap = v
+		default:
+			val := reflect.ValueOf(data)
+			if val.Kind() == reflect.Ptr {
+				val = val.Elem()
+			}
+			if val.IsValid() && val.Kind() == reflect.Struct {
+				objMap = make(map[string]any)
+				typ := val.Type()
+				for i := 0; i < val.NumField(); i++ {
+					f := typ.Field(i)
+					if !f.IsExported() {
+						continue
+					}
+					jsonTag := f.Tag.Get("json")
+					key := f.Name
+					if jsonTag != "" && jsonTag != "-" {
+						parts := strings.Split(jsonTag, ",")
+						if parts[0] != "" {
+							key = parts[0]
+						}
+					}
+					objMap[key] = val.Field(i).Interface()
+				}
+			} else {
+				details = append(details, ValidationErrorDetail{
+					Path:    currentPath,
+					Message: fmt.Sprintf("Expected object, got %T", data),
+				})
+				return details
+			}
 		}
 
 		// Check for unknown fields (strict mode)
@@ -84,13 +113,14 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 			})
 			return details
 		}
-		if rule.MinLength != nil && len(str) < *rule.MinLength {
+		runeCount := utf8.RuneCountInString(str)
+		if rule.MinLength != nil && runeCount < *rule.MinLength {
 			details = append(details, ValidationErrorDetail{
 				Path:    currentPath,
 				Message: fmt.Sprintf("String length must be at least %d characters", *rule.MinLength),
 			})
 		}
-		if rule.MaxLength != nil && len(str) > *rule.MaxLength {
+		if rule.MaxLength != nil && runeCount > *rule.MaxLength {
 			details = append(details, ValidationErrorDetail{
 				Path:    currentPath,
 				Message: fmt.Sprintf("String length must be at most %d characters", *rule.MaxLength),
@@ -118,6 +148,22 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 			details = append(details, ValidationErrorDetail{
 				Path:    currentPath,
 				Message: fmt.Sprintf("Expected number, got %T", data),
+			})
+			return details
+		}
+
+		if math.IsNaN(num) || math.IsInf(num, 0) {
+			details = append(details, ValidationErrorDetail{
+				Path:    currentPath,
+				Message: "Number cannot be NaN or Infinity",
+			})
+			return details
+		}
+
+		if rule.Type == TypeInteger && math.Trunc(num) != num {
+			details = append(details, ValidationErrorDetail{
+				Path:    currentPath,
+				Message: fmt.Sprintf("Expected integer, got float %v", num),
 			})
 			return details
 		}

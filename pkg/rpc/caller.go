@@ -3,14 +3,14 @@ package rpc
 import (
 	"encoding/json"
 	"fmt"
+
+	"github.com/CellsWeb/crpc-go/pkg/schema"
 )
 
 // CallOptions configures in-memory RPC execution parameters
 type CallOptions struct {
-	Headers         map[string]string
-	SkipMiddlewares bool
-	ContextData     map[string]any
-	ClientIP        string
+	Headers  map[string]string
+	ClientIP string
 }
 
 // CallInMemory executes an RPC function in-process without network overhead
@@ -39,12 +39,9 @@ func (app *CoreRPC) CallInMemory(functionKey string, input any, outputTarget any
 	if ctx.headers == nil {
 		ctx.headers = make(map[string]string)
 	}
-	for k, v := range opt.ContextData {
-		ctx.Set(k, v)
-	}
 
-	// Execute middlewares unless skipped
-	if !opt.SkipMiddlewares && len(fn.Middlewares) > 0 {
+	// Execute middlewares (always enforced across all transports)
+	if len(fn.Middlewares) > 0 {
 		for _, attachment := range fn.Middlewares {
 			mw, ok := app.middlewares[attachment.Name]
 			if !ok {
@@ -73,10 +70,24 @@ func (app *CoreRPC) CallInMemory(functionKey string, input any, outputTarget any
 		}
 	}
 
+	// Validate input schema
+	if fn.InputSchema != nil {
+		if valErrors := schema.Validate(fn.InputSchema, rawMap, ""); len(valErrors) > 0 {
+			return NewError(ErrValidation, fmt.Sprintf("Input validation failed: %d error(s)", len(valErrors)))
+		}
+	}
+
 	// Execute function handler
 	result, err := fn.Handler(ctx, rawMap)
 	if err != nil {
 		return err
+	}
+
+	// Validate output schema
+	if fn.OutputSchema != nil && result != nil {
+		if valErrors := schema.Validate(fn.OutputSchema, result, ""); len(valErrors) > 0 {
+			return NewError(ErrInternal, fmt.Sprintf("Handler output schema violation: %d error(s)", len(valErrors)))
+		}
 	}
 
 	// Marshal result into output target if provided
