@@ -418,4 +418,25 @@ func TestDualModeRoutingProtocolInvariants(t *testing.T) {
 			t.Fatalf("Expected file-before-routing rejection with invalid_body, got: %s", body)
 		}
 	}
+
+	// 4. Missing body routing fields when headers are supplied -> ErrInvalidBody
+	{
+		var ctx fasthttp.RequestCtx
+		ctx.Request.Header.SetMethod("POST")
+		ctx.Request.SetRequestURI("/rpc")
+		ctx.Request.Header.SetContentType("multipart/form-data; boundary=boundaryNoBodyRouting")
+		ctx.Request.Header.Set("X-CRPC-Namespace", "doc")
+		ctx.Request.Header.Set("X-CRPC-Function", "upload")
+
+		// Body contains data field only, omitting namespace and functionName
+		noRoutingBody := "--boundaryNoBodyRouting\r\nContent-Disposition: form-data; name=\"title\"\r\n\r\nDocument Title\r\n" +
+			"--boundaryNoBodyRouting--\r\n"
+		ctx.Request.SetBody([]byte(noRoutingBody))
+		handler(&ctx)
+
+		body := string(ctx.Response.Body())
+		if !strings.Contains(body, "invalid_body") || !strings.Contains(body, "Routing mismatch") {
+			t.Fatalf("Expected rejection when body routing is missing with headers, got: %s", body)
+		}
+	}
 }

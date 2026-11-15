@@ -44,7 +44,16 @@ func Validate(rule *SchemaRule, data any, currentPath string) []ValidationErrorD
 			val = val.Elem()
 			kind = val.Kind()
 		}
-		if kind == reflect.Struct {
+		isMarshaler := false
+		if _, ok := data.(json.Marshaler); ok {
+			isMarshaler = true
+		} else if val.CanAddr() {
+			if _, ok := val.Addr().Interface().(json.Marshaler); ok {
+				isMarshaler = true
+			}
+		}
+
+		if isMarshaler || kind == reflect.Struct {
 			if b, err := json.Marshal(data); err == nil {
 				var normalized any
 				if err := json.Unmarshal(b, &normalized); err == nil {

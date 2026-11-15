@@ -72,6 +72,11 @@ func (f *UploadedFile) Size() int64 {
 	return f.size
 }
 
+// TempPath returns the underlying temporary file path on disk, if any
+func (f *UploadedFile) TempPath() string {
+	return f.tempPath
+}
+
 // MimeType returns the detected content-type MIME string (falling back to declared)
 func (f *UploadedFile) MimeType() string {
 	if f.detectedMimeType != "" {

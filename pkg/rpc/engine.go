@@ -387,16 +387,15 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 		return
 	}
 
-	// Invariant: Verify consistency between headers and body if both are present
-	if headerNs != "" && (parsed.Namespace != "" || parsed.FunctionName != "") {
-		if parsed.Namespace != headerNs || parsed.FunctionName != headerFn {
-			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, fmt.Sprintf("Routing mismatch: headers specify %q but payload specifies %q", FormatFunctionKey(headerNs, headerFn), FormatFunctionKey(parsed.Namespace, parsed.FunctionName)), nil, start)
-			return
-		}
-	}
-
+	// Track all extracted temporary files immediately so ctx.Cleanup removes them on any failure
 	for _, f := range parsed.Files {
 		ctx.TrackFile(f)
+	}
+
+	// Invariant: Verify consistency between headers and body if headers are used (redundant dual-mode standard)
+	if headerNs != "" && (parsed.Namespace != headerNs || parsed.FunctionName != headerFn) {
+		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, fmt.Sprintf("Routing mismatch: headers specify %q but payload specifies %q", FormatFunctionKey(headerNs, headerFn), FormatFunctionKey(parsed.Namespace, parsed.FunctionName)), nil, start)
+		return
 	}
 
 	// Validate input schema

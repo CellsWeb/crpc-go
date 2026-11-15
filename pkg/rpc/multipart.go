@@ -121,6 +121,13 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 	}
 
 	var files []*UploadedFile
+	cleanupCreatedFiles := func() {
+		for _, f := range files {
+			if f != nil && f.TempPath() != "" {
+				_ = os.Remove(f.TempPath())
+			}
+		}
+	}
 
 	// Ensure isolated temp upload directory exists with 0700 permissions
 	uploadDir := filepath.Join(os.TempDir(), "crpc-uploads")
@@ -133,17 +140,20 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 		var fieldFiles []any
 		for _, fh := range fileHeaders {
 			if maxSizeBytes > 0 && fh.Size > maxSizeBytes {
+				cleanupCreatedFiles()
 				return nil, NewError(ErrPayloadTooLarge, fmt.Sprintf("File %q exceeds max allowed size of %d bytes", fh.Filename, maxSizeBytes))
 			}
 
 			src, err := fh.Open()
 			if err != nil {
+				cleanupCreatedFiles()
 				return nil, NewError(ErrInternal, fmt.Sprintf("Failed opening uploaded file %q: %v", fh.Filename, err))
 			}
 
 			tempFile, err := os.CreateTemp(uploadDir, "upload-*")
 			if err != nil {
 				src.Close()
+				cleanupCreatedFiles()
 				return nil, NewError(ErrInternal, fmt.Sprintf("Failed creating temp file for %q: %v", fh.Filename, err))
 			}
 			_ = os.Chmod(tempFile.Name(), 0600)
@@ -155,6 +165,7 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 				src.Close()
 				tempFile.Close()
 				_ = os.Remove(tempFile.Name())
+				cleanupCreatedFiles()
 				return nil, NewError(ErrInternal, fmt.Sprintf("Failed reading file header %q: %v", fh.Filename, err))
 			}
 
@@ -170,6 +181,7 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 					src.Close()
 					tempFile.Close()
 					_ = os.Remove(tempFile.Name())
+					cleanupCreatedFiles()
 					return nil, NewError(ErrInternal, fmt.Sprintf("Failed writing to temp file for %q: %v", fh.Filename, err))
 				}
 			}
@@ -180,6 +192,7 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 			tempFile.Close()
 			if err != nil {
 				_ = os.Remove(tempFile.Name())
+				cleanupCreatedFiles()
 				return nil, NewError(ErrInternal, fmt.Sprintf("Failed streaming uploaded file %q: %v", fh.Filename, err))
 			}
 

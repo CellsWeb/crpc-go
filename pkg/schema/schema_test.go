@@ -188,4 +188,18 @@ func TestCustomJsonMarshalerWireRepresentationValidation(t *testing.T) {
 	if len(errs) == 0 {
 		t.Fatalf("Expected CustomStringID emitting string on wire to be rejected by Object schema")
 	}
+
+	// Non-struct type with custom Marshaler: CustomSliceObject (slice emitting JSON object on wire)
+	customSlice := CustomSliceObject{"item1", "item2"}
+	arrayRule := schema.Array(schema.String())
+	errs = schema.Validate(arrayRule, customSlice, "")
+	if len(errs) == 0 {
+		t.Fatalf("Expected CustomSliceObject emitting object on wire to be rejected by Array schema")
+	}
+}
+
+type CustomSliceObject []string
+
+func (c CustomSliceObject) MarshalJSON() ([]byte, error) {
+	return []byte(`{"unexpected":true}`), nil
 }
