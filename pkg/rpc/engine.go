@@ -380,6 +380,14 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 
 // Response Enveloping (Uniform HTTP 200)
 
+func (app *CoreRPC) triggerTelemetry(event TelemetryEvent) {
+	for _, hook := range app.config.TelemetryHooks {
+		if hook != nil {
+			hook(event)
+		}
+	}
+}
+
 func (app *CoreRPC) sendSuccessResponse(reqCtx *fasthttp.RequestCtx, requestID string, data any, start time.Time) {
 	duration := float64(time.Since(start).Microseconds()) / 1000.0
 	envelope := ResponseEnvelope{
@@ -393,6 +401,16 @@ func (app *CoreRPC) sendSuccessResponse(reqCtx *fasthttp.RequestCtx, requestID s
 	reqCtx.SetStatusCode(fasthttp.StatusOK)
 	reqCtx.SetContentType("application/json")
 	_ = jsonMarshalToCtx(reqCtx, envelope)
+
+	if len(app.config.TelemetryHooks) > 0 {
+		app.triggerTelemetry(TelemetryEvent{
+			RequestID:  requestID,
+			DurationMs: duration,
+			Status:     "ok",
+			ClientIP:   reqCtx.RemoteIP().String(),
+			UserAgent:  string(reqCtx.Request.Header.UserAgent()),
+		})
+	}
 }
 
 func (app *CoreRPC) sendErrorResponse(reqCtx *fasthttp.RequestCtx, requestID, code, message string, details []ValidationErrorDetail, start time.Time) {
@@ -414,6 +432,18 @@ func (app *CoreRPC) sendErrorResponse(reqCtx *fasthttp.RequestCtx, requestID, co
 	reqCtx.SetStatusCode(statusCode)
 	reqCtx.SetContentType("application/json")
 	_ = jsonMarshalToCtx(reqCtx, envelope)
+
+	if len(app.config.TelemetryHooks) > 0 {
+		app.triggerTelemetry(TelemetryEvent{
+			RequestID:  requestID,
+			DurationMs: duration,
+			Status:     "error",
+			ErrorCode:  code,
+			ClientIP:   reqCtx.RemoteIP().String(),
+			UserAgent:  string(reqCtx.Request.Header.UserAgent()),
+			Error:      fmt.Errorf("%s: %s", code, message),
+		})
+	}
 }
 
 func mapErrorCodeToHTTPStatus(code string) int {

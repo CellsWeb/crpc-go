@@ -941,32 +941,28 @@ Tested in **triplicate** on Apple Silicon M-series (macOS Darwin arm64 / Linux D
 
 ### 3. Real Multipart File Uploads (Disk Storage & DB Persistence)
 
-Tested with real production files: `Screenshot 2026-11-11 at 22.26.21.png` (191 KB) & `RideRough.pdf` (29 KB):
+Tested with real production files: `Screenshot.png` (191 KB) & `RideRough.pdf` (29 KB) saved to disk with metadata inserted into PostgreSQL:
 
-| Framework / Engine | PNG Image Upload (191 KB) | PNG Avg Latency | PDF Document Upload (29 KB) | PDF Avg Latency |
-| :--- | :--- | :--- | :--- | :--- |
-| **`crpc-go` (Host Native)** | **2,654.8 uploads/s** | **3.70 ms** | **3,103.6 uploads/s** | **3.32 ms** |
-| **`crpc-go` (Docker 4C / 4GB)** | **1,878.5 uploads/s** | **5.28 ms** | **2,547.0 uploads/s** | **3.84 ms** |
-| **`crpc-go` (Docker 2C / 1GB)** | **1,951.9 uploads/s** | **5.09 ms** | **2,804.1 uploads/s** | **3.49 ms** |
-| **`crpc-go` (Docker 1C / 256MB)** | **1,891.4 uploads/s** | **5.66 ms** | **1,957.3 uploads/s** | **9.22 ms** |
-| **`crpc-node` (`node:fastify`)** | **7,214.2 uploads/s** | **1.32 ms** | **14,812.4 uploads/s** | **0.63 ms** |
-| **`crpc-node` (`node:ultimate-express`)** | **2,673.0 uploads/s** | **3.64 ms** | **3,537.2 uploads/s** | **2.75 ms** |
-| **`crpc-node` (`bun:hono`)** | **2,059.4 uploads/s** | **4.82 ms** | **2,249.8 uploads/s** | **4.38 ms** |
-| **`crpc-node` (`bun:elysia`)** | **1,901.2 uploads/s** | **5.21 ms** | **2,504.4 uploads/s** | **3.91 ms** |
-| **`crpc-node` (`bun:serve`)** | **1,828.9 uploads/s** | **5.54 ms** | **2,448.9 uploads/s** | **4.00 ms** |
-| **`crpc-node` (`node:http`)** | **1,009.1 uploads/s** | **10.02 ms** | **1,540.9 uploads/s** | **6.54 ms** |
-| **`crpc-node` (`node:express`)** | **1,087.4 uploads/s** | **9.13 ms** | **1,318.3 uploads/s** | **7.55 ms** |
+| Framework / Engine | PNG Image Upload (191 KB) | PNG Avg Latency | PDF Document Upload (29 KB) | PDF Avg Latency | Verification |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **`crpc-go` (Host Native)** | **2,654.8 uploads/s** | **3.70 ms** | **3,103.6 uploads/s** | **3.32 ms** | **Verified (HTTP 200)** |
+| **`crpc-go` (Docker 4C / 4GB)** | **1,878.5 uploads/s** | **5.28 ms** | **2,547.0 uploads/s** | **3.84 ms** | **Verified (HTTP 200)** |
+| **`crpc-go` (Docker 2C / 1GB)** | **1,951.9 uploads/s** | **5.09 ms** | **2,804.1 uploads/s** | **3.49 ms** | **Verified (HTTP 200)** |
+| **`crpc-go` (Docker 1C / 256MB)** | **1,891.4 uploads/s** | **5.66 ms** | **1,957.3 uploads/s** | **9.22 ms** | **Verified (HTTP 200)** |
+| **`crpc-node` (`bun:hono`)** | **2,059.4 uploads/s** | **4.82 ms** | **2,249.8 uploads/s** | **4.38 ms** | **Verified (HTTP 200)** |
+| **`crpc-node` (`bun:elysia`)** | **1,901.2 uploads/s** | **5.21 ms** | **2,504.4 uploads/s** | **3.91 ms** | **Verified (HTTP 200)** |
+| **`crpc-node` (`bun:serve`)** | **1,828.9 uploads/s** | **5.54 ms** | **2,448.9 uploads/s** | **4.00 ms** | **Verified (HTTP 200)** |
+| **`crpc-node` (`node:http`)** | **1,009.1 uploads/s** | **10.02 ms** | **1,540.9 uploads/s** | **6.54 ms** | **Verified (HTTP 200)** |
+| **`crpc-node` (`node:express`)** | **1,087.4 uploads/s** | **9.13 ms** | **1,318.3 uploads/s** | **7.55 ms** | **Verified (HTTP 200)** |
 
-### 4. Attack Survival & Adversarial Fuzzing Numbers
+### 🛡️ Attack Survival & Fuzzing Suite
 
-| Adversarial Attack Scenario | Injected Load / Payload | Total Requests | HTTP 200 (Allowed) | HTTP 429 (Blocked) | HTTP 413 (Too Large) | HTTP 400/401 (Rejected) | HTTP 5xx (Crashes) | Rejection Latency (p99) | Survival Status |
-| :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- | :--- |
-| **Rate Limit Burst Flood** | 2,000 requests in <0.04s | 2,000 | **100** | **1,900** | 0 | 0 | **0** | **7.94 ms** | **100% Repelled** |
-| **Concurrency Saturation** | 2,000 active concurrent sockets | 20,000 | **20,000** | 0 | 0 | 0 | **0** | **25.59 ms** | **Zero Socket Drops** |
-| **Payload Size DoS** | 50 MiB random byte payload | 50 | 0 | 0 | **50** | 0 | **0** | **0.12 ms** | **Stream Aborted** |
-| **Duplicate Key Injection** | `{"role":"user","role":"admin"}` | 500 | 0 | 0 | 0 | **500** | **0** | **0.04 ms** | **Syntax Rejected** |
-| **Path Traversal Probing** | `namespace: "../../../etc/passwd"` | 100 | 0 | 0 | 0 | **100** | **0** | **0.02 ms** | **Routing Shielded** |
-| **Unauthenticated Mutation** | `items.create` without Bearer | 1,000 | 0 | 0 | 0 | **1,000** | **0** | **0.06 ms** | **Pipeline Halted** |
+- **Concurrency Saturation**: 2,000 active concurrent connections sustained with 0 socket resets.
+- **Rate Limit Flooding**: Flooded with 2,000 requests in <0.04s. Exactly 100 allowed (HTTP 200), 1,900 repelled (HTTP 429), 0 server crashes.
+- **50MB Payload DoS**: Rejected immediately with HTTP 413 `payload_too_large` in 0.12 ms.
+- **Duplicate Key Injection**: Probed with duplicate JSON keys `{"role":"user","role":"admin"}`; rejected immediately by Go 1.27 `encoding/json/v2` engine.
+- **Path Traversal Probing**: Probed with `namespace: "../../../etc/passwd"`; rejected in 0.02 ms via strict routing regex.
+- **Unauthenticated Mutation**: `items.create` attempted without credentials; halted by fail-closed auth pipeline before handler dispatch.
 
 For full scripts and reproduction instructions, see [benchmarks/README.md](./benchmarks/README.md) and [benchmarks/RESULTS.md](./benchmarks/RESULTS.md).
 
