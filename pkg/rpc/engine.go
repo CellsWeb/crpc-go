@@ -334,6 +334,20 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 
 // Multipart Form-Data RPC Dispatcher (Multi-phase)
 func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, start time.Time) {
+	// Peek selects the first value; reject duplicates before routing or middleware dispatch.
+	var namespaceHeaders, functionHeaders int
+	reqCtx.Request.Header.VisitAll(func(key, _ []byte) {
+		if strings.EqualFold(string(key), "X-CRPC-Namespace") {
+			namespaceHeaders++
+		} else if strings.EqualFold(string(key), "X-CRPC-Function") {
+			functionHeaders++
+		}
+	})
+	if namespaceHeaders > 1 || functionHeaders > 1 {
+		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, "Duplicate routing headers ('X-CRPC-Namespace' or 'X-CRPC-Function') in multipart request", nil, start)
+		return
+	}
+
 	headerNs := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Namespace")))
 	headerFn := strings.TrimSpace(string(reqCtx.Request.Header.Peek("X-CRPC-Function")))
 
