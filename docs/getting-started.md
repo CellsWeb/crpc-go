@@ -102,6 +102,30 @@ crpc-go create:middleware --name rateLimit --desc "Per-IP rate limiter"
 
 ## 🏃 Running the Application
 
+Generated servers read exported process environment variables. Neither the
+executable nor `crpc-go dev` automatically loads `.env`. To use the generated,
+trusted shell-compatible file in a POSIX shell, export it before starting:
+
+```bash
+set -a
+. ./.env
+set +a
+go run ./cmd/server
+```
+
+`DOCS_ENABLED=true` enables documentation and `false` disables it. Values are
+trimmed and case-insensitive; `1`/`0` and Go's `t`/`f` aliases also work. An unset
+or blank value preserves the existing default: enabled unless `NODE_ENV` is
+exactly `production`. An invalid nonblank value stops startup with a configuration
+error, including in production. `DOCS_PATH` selects the absolute docs endpoint,
+for example `/internal/docs`; an unset or blank value defaults to `/docs`.
+
+The executable uses the final exported values. A sourced file replaces earlier
+shell assignments; exports after sourcing replace the file's values. A `.env`
+file that has not been exported has no effect. Existing programmatic
+`rpc.Config.DocsEnabled` / `DocsPath` behavior is unchanged, and `IsPublic` remains
+a documentation badge only.
+
 Start the development server with live reload:
 
 ```bash

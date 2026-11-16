@@ -28,10 +28,15 @@ replace github.com/CellsWeb/crpc-go => ../
 	_ = os.WriteFile(filepath.Join(targetDir, "go.mod"), []byte(goMod), 0644)
 
 	// 2. .env.example & .env
-	envContent := `PORT=4000
+	envContent := `# Neither the generated binary nor crpc-go dev automatically loads .env.
+# Export values before starting; for this trusted shell-compatible file:
+# set -a; . ./.env; set +a
+PORT=4000
 HOST=0.0.0.0
 RPC_PATH=/rpc
+# Unset/blank DOCS_ENABLED uses NODE_ENV != production. Invalid booleans stop startup.
 DOCS_ENABLED=true
+# Use an absolute documentation endpoint, e.g. /internal/docs. Blank defaults to /docs.
 DOCS_PATH=/docs
 NODE_ENV=development
 `
@@ -390,6 +395,8 @@ func ProcessMultipleImageFields(files []*rpc.UploadedFile, dir string, removeLis
 import (
 	"log"
 	"os"
+	"strconv"
+	"strings"
 
 	"github.com/CellsWeb/crpc-go/pkg/rpc"
 
@@ -400,12 +407,27 @@ import (
 )
 
 func main() {
+	// Environment values must be exported by the shell or deployment platform.
+	// .env is not automatically loaded by this executable or crpc-go dev.
+	docsEnabled := os.Getenv("NODE_ENV") != "production"
+	if raw := strings.TrimSpace(os.Getenv("DOCS_ENABLED")); raw != "" {
+		var err error
+		docsEnabled, err = strconv.ParseBool(strings.ToLower(raw))
+		if err != nil {
+			log.Fatal("Invalid DOCS_ENABLED: expected true/false, 1/0, or t/f")
+		}
+	}
+	docsPath := strings.TrimSpace(os.Getenv("DOCS_PATH"))
+	if docsPath == "" {
+		docsPath = "/docs"
+	}
+
 	app, err := rpc.New(rpc.Config{
 		RpcPath:     "/rpc",
 		Port:        4000,
 		Host:        "0.0.0.0",
-		DocsEnabled: os.Getenv("NODE_ENV") != "production",
-		DocsPath:    "/docs",
+		DocsEnabled: docsEnabled,
+		DocsPath:    docsPath,
 		CORS: &rpc.CorsConfig{
 			AllowOrigins: []string{"*"},
 			AllowMethods: []string{"POST", "GET", "OPTIONS"},
@@ -424,7 +446,9 @@ func main() {
 	})
 
 	log.Printf("⚡ CellsWeb RPC Go Engine running at http://0.0.0.0:4000/rpc")
-	log.Printf("📖 Interactive Docs available at http://0.0.0.0:4000/docs")
+	if docsEnabled {
+		log.Printf("📖 Interactive Docs available at http://0.0.0.0:4000%%s", docsPath)
+	}
 
 	if err := app.ListenAndServe(); err != nil {
 		log.Fatalf("Server stopped: %%v", err)
