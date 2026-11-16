@@ -296,6 +296,32 @@ func CoerceMultipartData(rule *SchemaRule, data map[string]any) {
 				if nestedMap, ok := val.(map[string]any); ok {
 					CoerceMultipartData(prop, nestedMap)
 				}
+			} else if prop.Type == TypeArray && prop.Items != nil {
+				if slice, ok := val.([]any); ok {
+					for idx, item := range slice {
+						if itemMap, ok := item.(map[string]any); ok {
+							CoerceMultipartData(prop.Items, itemMap)
+						} else if sItem, isStr := item.(string); isStr {
+							switch prop.Items.Type {
+							case TypeBoolean:
+								trimmed := strings.ToLower(strings.TrimSpace(sItem))
+								if trimmed == "true" || trimmed == "1" {
+									slice[idx] = true
+								} else if trimmed == "false" || trimmed == "0" {
+									slice[idx] = false
+								}
+							case TypeInteger:
+								if iv, err := strconv.ParseInt(strings.TrimSpace(sItem), 10, 64); err == nil {
+									slice[idx] = iv
+								}
+							case TypeNumber:
+								if fv, err := strconv.ParseFloat(strings.TrimSpace(sItem), 64); err == nil {
+									slice[idx] = fv
+								}
+							}
+						}
+					}
+				}
 			}
 			continue
 		}

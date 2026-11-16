@@ -354,3 +354,92 @@ func TestMultipartJSONFieldPrototypeSanitization(t *testing.T) {
 		t.Errorf("Expected name 'production', got %q", resp.Data.Name)
 	}
 }
+
+type OrderItem struct {
+	Quantity int  `json:"quantity"`
+	Active   bool `json:"active"`
+}
+
+type OrderInput struct {
+	Items  []OrderItem `json:"items"`
+	Scores []float64   `json:"scores"`
+}
+
+type OrderOutput struct {
+	ItemCount int     `json:"itemCount"`
+	FirstQty  int     `json:"firstQty"`
+	FirstAct  bool    `json:"firstAct"`
+	FirstScr  float64 `json:"firstScr"`
+}
+
+func TestMultipartArrayItemCoercion(t *testing.T) {
+	app, err := rpc.New(rpc.Config{
+		RpcPath: "/rpc",
+		CORS:    &rpc.CorsConfig{AllowOrigins: []string{"*"}},
+	})
+	if err != nil {
+		t.Fatalf("Failed creating app: %v", err)
+	}
+
+	rpc.Register(rpc.FunctionConfig[OrderInput, OrderOutput]{
+		Namespace:    "orders",
+		FunctionName: "process",
+		ContentType:  "multipart/form-data",
+		Handler: func(ctx *rpc.Context, input OrderInput) (*OrderOutput, error) {
+			firstQty, firstAct := 0, false
+			if len(input.Items) > 0 {
+				firstQty = input.Items[0].Quantity
+				firstAct = input.Items[0].Active
+			}
+			firstScr := 0.0
+			if len(input.Scores) > 0 {
+				firstScr = input.Scores[0]
+			}
+			return &OrderOutput{
+				ItemCount: len(input.Items),
+				FirstQty:  firstQty,
+				FirstAct:  firstAct,
+				FirstScr:  firstScr,
+			}, nil
+		},
+	})
+	app.UseGlobalRegistry()
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	_ = writer.WriteField("namespace", "orders")
+	_ = writer.WriteField("functionName", "process")
+	_ = writer.WriteField("items", `[{"quantity":"2","active":"true"},{"quantity":"5","active":"false"}]`)
+	_ = writer.WriteField("scores", `["98.5","100.0"]`)
+	_ = writer.Close()
+
+	var ctx fasthttp.RequestCtx
+	ctx.Request.Header.SetMethod("POST")
+	ctx.Request.Header.SetContentType(writer.FormDataContentType())
+	ctx.Request.SetRequestURI("/rpc")
+	ctx.Request.SetBody(body.Bytes())
+
+	app.Handler()(&ctx)
+
+	var resp struct {
+		Status string      `json:"status"`
+		Data   OrderOutput `json:"data"`
+	}
+	_ = json.Unmarshal(ctx.Response.Body(), &resp)
+
+	if resp.Status != "ok" {
+		t.Fatalf("Expected ok, got %s. Body: %s", resp.Status, string(ctx.Response.Body()))
+	}
+	if resp.Data.ItemCount != 2 {
+		t.Errorf("Expected ItemCount 2, got %d", resp.Data.ItemCount)
+	}
+	if resp.Data.FirstQty != 2 {
+		t.Errorf("Expected FirstQty 2, got %d", resp.Data.FirstQty)
+	}
+	if !resp.Data.FirstAct {
+		t.Errorf("Expected FirstAct true, got %v", resp.Data.FirstAct)
+	}
+	if resp.Data.FirstScr != 98.5 {
+		t.Errorf("Expected FirstScr 98.5, got %v", resp.Data.FirstScr)
+	}
+}
