@@ -18,7 +18,7 @@ import (
 type BridgeRequest struct {
 	ID       string            `json:"id"`
 	Function string            `json:"function"`
-	Data     map[string]any    `json:"data"`
+	Data     any               `json:"data"`
 	Headers  map[string]string `json:"headers,omitempty"`
 }
 

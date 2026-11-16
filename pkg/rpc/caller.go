@@ -53,32 +53,34 @@ func (app *CoreRPC) CallInMemory(functionKey string, input any, outputTarget any
 		}
 	}
 
-	// Prepare raw input map
-	var rawMap map[string]any
+	// Preserve arbitrary JSON shapes while retaining native values in non-nil maps.
+	var rawData any
 	if input != nil {
 		switch v := input.(type) {
 		case map[string]any:
-			rawMap = v
+			if v != nil {
+				rawData = v
+			}
 		default:
 			bytes, err := json.Marshal(input)
 			if err != nil {
 				return NewError(ErrInvalidBody, fmt.Sprintf("Failed to marshal input: %v", err))
 			}
-			if err := json.Unmarshal(bytes, &rawMap); err != nil {
-				return NewError(ErrInvalidBody, fmt.Sprintf("Failed to parse input map: %v", err))
+			if err := json.Unmarshal(bytes, &rawData); err != nil {
+				return NewError(ErrInvalidBody, fmt.Sprintf("Failed to parse input: %v", err))
 			}
 		}
 	}
 
 	// Validate input schema
 	if fn.InputSchema != nil {
-		if valErrors := schema.Validate(fn.InputSchema, rawMap, ""); len(valErrors) > 0 {
+		if valErrors := schema.Validate(fn.InputSchema, rawData, ""); len(valErrors) > 0 {
 			return NewError(ErrValidation, fmt.Sprintf("Input validation failed: %d error(s)", len(valErrors)))
 		}
 	}
 
 	// Execute function handler
-	result, err := fn.Handler(ctx, rawMap)
+	result, err := fn.Handler(ctx, rawData)
 	if err != nil {
 		return err
 	}
