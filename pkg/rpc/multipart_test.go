@@ -363,6 +363,7 @@ type OrderItem struct {
 type OrderInput struct {
 	Items  []OrderItem `json:"items"`
 	Scores []float64   `json:"scores"`
+	Matrix [][]int     `json:"matrix"`
 }
 
 type OrderOutput struct {
@@ -370,6 +371,7 @@ type OrderOutput struct {
 	FirstQty  int     `json:"firstQty"`
 	FirstAct  bool    `json:"firstAct"`
 	FirstScr  float64 `json:"firstScr"`
+	MatrixVal int     `json:"matrixVal"`
 }
 
 func TestMultipartArrayItemCoercion(t *testing.T) {
@@ -395,11 +397,16 @@ func TestMultipartArrayItemCoercion(t *testing.T) {
 			if len(input.Scores) > 0 {
 				firstScr = input.Scores[0]
 			}
+			matrixVal := 0
+			if len(input.Matrix) > 1 && len(input.Matrix[1]) > 0 {
+				matrixVal = input.Matrix[1][0] // matrix[1][0] should be 3
+			}
 			return &OrderOutput{
 				ItemCount: len(input.Items),
 				FirstQty:  firstQty,
 				FirstAct:  firstAct,
 				FirstScr:  firstScr,
+				MatrixVal: matrixVal,
 			}, nil
 		},
 	})
@@ -411,6 +418,7 @@ func TestMultipartArrayItemCoercion(t *testing.T) {
 	_ = writer.WriteField("functionName", "process")
 	_ = writer.WriteField("items", `[{"quantity":"2","active":"true"},{"quantity":"5","active":"false"}]`)
 	_ = writer.WriteField("scores", `["98.5","100.0"]`)
+	_ = writer.WriteField("matrix", `[["1","2"],["3","4"]]`)
 	_ = writer.Close()
 
 	var ctx fasthttp.RequestCtx
@@ -441,5 +449,8 @@ func TestMultipartArrayItemCoercion(t *testing.T) {
 	}
 	if resp.Data.FirstScr != 98.5 {
 		t.Errorf("Expected FirstScr 98.5, got %v", resp.Data.FirstScr)
+	}
+	if resp.Data.MatrixVal != 3 {
+		t.Errorf("Expected MatrixVal 3 from [1][0], got %d", resp.Data.MatrixVal)
 	}
 }

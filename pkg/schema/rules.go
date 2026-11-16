@@ -285,65 +285,61 @@ func CoerceMultipartData(rule *SchemaRule, data map[string]any) {
 	}
 
 	for k, prop := range rule.Properties {
-		val, exists := data[k]
-		if !exists || val == nil {
-			continue
+		if val, exists := data[k]; exists && val != nil {
+			data[k] = CoerceValue(prop, val)
 		}
+	}
+}
 
-		s, isStr := val.(string)
-		if !isStr {
-			if prop.Type == TypeObject && prop.Properties != nil {
-				if nestedMap, ok := val.(map[string]any); ok {
-					CoerceMultipartData(prop, nestedMap)
-				}
-			} else if prop.Type == TypeArray && prop.Items != nil {
-				if slice, ok := val.([]any); ok {
-					for idx, item := range slice {
-						if itemMap, ok := item.(map[string]any); ok {
-							CoerceMultipartData(prop.Items, itemMap)
-						} else if sItem, isStr := item.(string); isStr {
-							switch prop.Items.Type {
-							case TypeBoolean:
-								trimmed := strings.ToLower(strings.TrimSpace(sItem))
-								if trimmed == "true" || trimmed == "1" {
-									slice[idx] = true
-								} else if trimmed == "false" || trimmed == "0" {
-									slice[idx] = false
-								}
-							case TypeInteger:
-								if iv, err := strconv.ParseInt(strings.TrimSpace(sItem), 10, 64); err == nil {
-									slice[idx] = iv
-								}
-							case TypeNumber:
-								if fv, err := strconv.ParseFloat(strings.TrimSpace(sItem), 64); err == nil {
-									slice[idx] = fv
-								}
-							}
-						}
-					}
-				}
-			}
-			continue
-		}
+// CoerceValue recursively walks any schema structure (objects, multi-dimensional arrays, scalars)
+func CoerceValue(rule *SchemaRule, val any) any {
+	if rule == nil || val == nil {
+		return val
+	}
 
-		switch prop.Type {
+	// 1. Strings to scalar primitives
+	if s, isStr := val.(string); isStr {
+		switch rule.Type {
 		case TypeBoolean:
 			trimmed := strings.ToLower(strings.TrimSpace(s))
 			if trimmed == "true" || trimmed == "1" {
-				data[k] = true
+				return true
 			} else if trimmed == "false" || trimmed == "0" {
-				data[k] = false
+				return false
 			}
 		case TypeInteger:
-			trimmed := strings.TrimSpace(s)
-			if iv, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
-				data[k] = iv
+			if iv, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+				return iv
 			}
 		case TypeNumber:
-			trimmed := strings.TrimSpace(s)
-			if fv, err := strconv.ParseFloat(trimmed, 64); err == nil {
-				data[k] = fv
+			if fv, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+				return fv
 			}
 		}
+		return val
 	}
+
+	// 2. Objects / nested maps
+	if rule.Type == TypeObject || rule.Properties != nil {
+		if m, ok := val.(map[string]any); ok {
+			for k, prop := range rule.Properties {
+				if childVal, exists := m[k]; exists && childVal != nil {
+					m[k] = CoerceValue(prop, childVal)
+				}
+			}
+			return m
+		}
+	}
+
+	// 3. Multi-dimensional Arrays (arbitrary depth: [][]int, [][][]float64, []Object)
+	if rule.Type == TypeArray && rule.Items != nil {
+		if slice, ok := val.([]any); ok {
+			for idx, item := range slice {
+				slice[idx] = CoerceValue(rule.Items, item)
+			}
+			return slice
+		}
+	}
+
+	return val
 }
