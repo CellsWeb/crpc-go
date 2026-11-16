@@ -51,9 +51,11 @@ type RegisteredMiddleware struct {
 // FunctionMetadata contains descriptive documentation and operational flags for the /docs UI
 type FunctionMetadata struct {
 	Description string   `json:"description,omitempty"`
-	IsPublic    bool     `json:"isPublic,omitempty"`
+	IsPublic    bool     `json:"isPublic,omitempty"` // Legacy docs badge only; never controls visibility or authorization.
 	Deprecated  bool     `json:"deprecated,omitempty"`
 	Tags        []string `json:"tags,omitempty"`
+	// HideFromDocs hides a function from docs only. The zero value keeps it visible.
+	HideFromDocs bool `json:"hideFromDocs,omitempty"`
 }
 
 // FunctionDefinition holds metadata, schemas, and execution handlers

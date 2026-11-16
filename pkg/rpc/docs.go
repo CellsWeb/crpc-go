@@ -276,7 +276,7 @@ func (app *CoreRPC) handleDocsRequest(reqCtx *fasthttp.RequestCtx) {
 	// 2. Legacy /docs/fn/:key
 	if len(parts) == 2 && parts[0] == "fn" {
 		fnKey := parts[1]
-		if fn, ok := functions[fnKey]; ok {
+		if fn, ok := functions[fnKey]; ok && !fn.Metadata.HideFromDocs {
 			reqCtx.SetBodyString(renderFunctionDocs(normDocs, cleanRpc, serverUrl, fn, middlewares, functions))
 			return
 		}
@@ -289,7 +289,7 @@ func (app *CoreRPC) handleDocsRequest(reqCtx *fasthttp.RequestCtx) {
 		ns := strings.Join(nsParts, ".")
 		targetKey := ns + "." + fnName
 
-		if fn, ok := functions[targetKey]; ok {
+		if fn, ok := functions[targetKey]; ok && !fn.Metadata.HideFromDocs {
 			reqCtx.SetBodyString(renderFunctionDocs(normDocs, cleanRpc, serverUrl, fn, middlewares, functions))
 			return
 		}
@@ -344,6 +344,9 @@ func buildSidebar(functions map[string]*FunctionDefinition, middlewares map[stri
 	// Group functions by namespace
 	grouped := make(map[string][]*FunctionDefinition)
 	for _, fn := range functions {
+		if fn.Metadata.HideFromDocs {
+			continue
+		}
 		grouped[fn.Namespace] = append(grouped[fn.Namespace], fn)
 	}
 
@@ -789,8 +792,13 @@ func renderDocsIndex(
 	}
 
 	grouped := make(map[string][]*FunctionDefinition)
+	totalFns := 0
 	for _, fn := range functions {
+		if fn.Metadata.HideFromDocs {
+			continue
+		}
 		grouped[fn.Namespace] = append(grouped[fn.Namespace], fn)
+		totalFns++
 	}
 	sortedNs := make([]string, 0, len(grouped))
 	for ns := range grouped {
@@ -816,7 +824,7 @@ func renderDocsIndex(
     </div>
     <input class="search-bar" type="search" placeholder="Search functions, namespaces, or middlewares..." oninput="filterFns(this.value)" id="search-input">
     <div id="fn-list">`,
-		len(functions), len(sortedNs), endpointBadge))
+		totalFns, len(sortedNs), endpointBadge))
 
 	if len(sortedNs) == 0 {
 		body.WriteString(`<div class="empty">No functions registered yet.<br>Add functions to your RPC application</div>`)
@@ -1105,6 +1113,9 @@ func renderFunctionDocs(
 	allFunctions map[string]*FunctionDefinition,
 ) string {
 	normDocs := normalizeDocsEndpoint(docsEndpoint)
+	if fn.Metadata.HideFromDocs {
+		return renderDocsNotFound(normDocs)
+	}
 	cleanServer := strings.TrimRight(serverUrl, "/")
 	cleanRpc := strings.TrimSpace(rpcEndpoint)
 	if !strings.HasPrefix(cleanRpc, "/") {

@@ -81,6 +81,24 @@ type Output struct {
 - `json:"id"`: Maps JSON payload field name. Append `,omitempty` to mark the field as **optional**.
 - `doc:"Description"`: Supplies the human-readable description rendered on the left column of `/docs`.
 
+### Function documentation visibility
+
+Functions appear in `/docs` by default, including functions that omit `IsPublic`. To hide documentation for a function, add the explicit opt-out to its existing metadata:
+
+```go
+var Metadata = rpc.FunctionMetadata{
+	Description:  "Internal maintenance operation",
+	IsPublic:     false, // Legacy PUBLIC/PRIVATE badge only.
+	HideFromDocs: true,  // Explicit documentation opt-out.
+}
+```
+
+`HideFromDocs` defaults to `false`: omitted/false keeps documentation visible; true removes the function from the sidebar, directory, search, counts, schemas, and standard/legacy direct docs pages. Hidden direct docs URLs return 404. The function remains registered and remains in generated client contracts.
+
+This setting never grants, denies, or bypasses RPC execution. Authentication and authorization remain the responsibility of middleware. A hidden function without authentication middleware is still callable anonymously.
+
+For compatibility, `IsPublic` retains its existing `bool` type and badge-only behavior. Go cannot distinguish an omitted bool from explicit false, so `IsPublic: false` alone does **not** hide documentation. Migrate functions intended to be hidden by adding `HideFromDocs: true`, retaining existing metadata and middleware. Node uses the equivalent `metadata.hideFromDocs: true`; omission remains visible in both runtimes. No API signatures or RPC envelopes change.
+
 ---
 
 ## 2. Attaching Middlewares (`middlewares.go`)
