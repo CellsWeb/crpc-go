@@ -46,14 +46,20 @@ func ParseMultipartPhase1(reqCtx *fasthttp.RequestCtx) (namespace, functionName 
 		}
 
 		fieldName := part.FormName()
-		if fieldName == "namespace" && namespace == "" {
+		if fieldName == "namespace" {
+			if namespace != "" {
+				return "", "", NewError(ErrInvalidBody, "Duplicate 'namespace' field in multipart payload")
+			}
 			buf := make([]byte, 129)
 			n, _ := io.ReadFull(part, buf)
 			if n > 128 {
 				return "", "", NewError(ErrInvalidBody, "namespace field exceeds 128 characters")
 			}
 			namespace = string(buf[:n])
-		} else if fieldName == "functionName" && functionName == "" {
+		} else if fieldName == "functionName" {
+			if functionName != "" {
+				return "", "", NewError(ErrInvalidBody, "Duplicate 'functionName' field in multipart payload")
+			}
 			buf := make([]byte, 129)
 			n, _ := io.ReadFull(part, buf)
 			if n > 128 {
@@ -101,6 +107,10 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 		return nil, NewError(ErrPayloadTooLarge, fmt.Sprintf("Exceeded maximum allowed files limit (%d)", limitFiles))
 	}
 
+	if len(form.Value["namespace"]) > 1 || len(form.Value["functionName"]) > 1 {
+		return nil, NewError(ErrInvalidBody, "Duplicate routing fields ('namespace' or 'functionName') in multipart payload")
+	}
+
 	data := make(map[string]any)
 	var bodyNs, bodyFn string
 	if len(form.Value["namespace"]) > 0 {
@@ -124,7 +134,7 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 
 	// Extract standard text values
 	for k, vals := range form.Value {
-		if k == "namespace" || k == "functionName" {
+		if k == "namespace" || k == "functionName" || k == "__proto__" || k == "constructor" || k == "prototype" {
 			continue
 		}
 		actualKey := k
@@ -162,6 +172,9 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 
 	// Extract binary files by streaming directly to disk temp files (zero in-memory accumulation)
 	for fieldName, fileHeaders := range form.File {
+		if fieldName == "__proto__" || fieldName == "constructor" || fieldName == "prototype" {
+			continue
+		}
 		var fieldFiles []any
 		for _, fh := range fileHeaders {
 			if maxSizeBytes > 0 && fh.Size > maxSizeBytes {

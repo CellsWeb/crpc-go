@@ -81,7 +81,7 @@ func Register[TInput any, TOutput any](cfg FunctionConfig[TInput, TOutput]) *Fun
 	return def
 }
 
-// injectFilesIntoStruct copies *UploadedFile from raw input map to struct fields matching json tags
+// injectFilesIntoStruct copies *UploadedFile and []*UploadedFile from raw input map to struct fields matching json tags
 func injectFilesIntoStruct(target any, raw map[string]any) {
 	if raw == nil || target == nil {
 		return
@@ -106,11 +106,44 @@ func injectFilesIntoStruct(target any, raw map[string]any) {
 			}
 		}
 
+		fieldVal := val.Field(i)
+		if !fieldVal.CanSet() {
+			continue
+		}
+
 		if rawVal, exists := raw[fieldName]; exists {
+			// 1. Single *UploadedFile
 			if file, ok := rawVal.(*UploadedFile); ok {
-				fieldVal := val.Field(i)
-				if fieldVal.CanSet() && fieldVal.Type() == reflect.TypeOf((*UploadedFile)(nil)) {
+				if fieldVal.Type() == reflect.TypeOf((*UploadedFile)(nil)) {
 					fieldVal.Set(reflect.ValueOf(file))
+				}
+				continue
+			}
+
+			// 2. Slice of []*UploadedFile
+			if fieldVal.Type() == reflect.TypeOf(([]*UploadedFile)(nil)) {
+				var fileList []*UploadedFile
+				if slice, ok := rawVal.([]*UploadedFile); ok {
+					fileList = slice
+				} else if slice, ok := rawVal.([]any); ok {
+					for _, item := range slice {
+						if f, ok := item.(*UploadedFile); ok {
+							fileList = append(fileList, f)
+						}
+					}
+				}
+				if len(fileList) > 0 {
+					fieldVal.Set(reflect.ValueOf(fileList))
+				}
+				continue
+			}
+
+			// 3. Nested struct or pointer to struct
+			if nestedMap, ok := rawVal.(map[string]any); ok {
+				if fieldVal.Kind() == reflect.Struct {
+					injectFilesIntoStruct(fieldVal.Addr().Interface(), nestedMap)
+				} else if fieldVal.Kind() == reflect.Pointer && !fieldVal.IsNil() && fieldVal.Elem().Kind() == reflect.Struct {
+					injectFilesIntoStruct(fieldVal.Interface(), nestedMap)
 				}
 			}
 		}
