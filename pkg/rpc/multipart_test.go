@@ -130,6 +130,7 @@ func TestMultipartMaxFilesAndCount(t *testing.T) {
 
 type ProductInput struct {
 	Title   string            `json:"title"`
+	Code    string            `json:"code"`
 	Price   float64           `json:"price"`
 	InStock bool              `json:"inStock"`
 	Count   int               `json:"count"`
@@ -140,6 +141,7 @@ type ProductInput struct {
 }
 
 type ProductOutput struct {
+	Code                 string  `json:"code"`
 	Price                float64 `json:"price"`
 	InStock              bool    `json:"inStock"`
 	Count                int     `json:"count"`
@@ -173,6 +175,7 @@ func TestMultipartPrimitiveCoercionAndMixedArray(t *testing.T) {
 			}
 
 			return &ProductOutput{
+				Code:                 input.Code,
 				Price:                input.Price,
 				InStock:              input.InStock,
 				Count:                input.Count,
@@ -197,6 +200,7 @@ func TestMultipartPrimitiveCoercionAndMixedArray(t *testing.T) {
 
 	// Primitive strings in multipart
 	_ = writer.WriteField("title", "Sneakers")
+	_ = writer.WriteField("code", "123456")
 	_ = writer.WriteField("price", "125.5")
 	_ = writer.WriteField("inStock", "true")
 	_ = writer.WriteField("count", "42")
@@ -240,6 +244,9 @@ func TestMultipartPrimitiveCoercionAndMixedArray(t *testing.T) {
 	}
 
 	// Assertions
+	if resp.Data.Code != "123456" {
+		t.Errorf("Expected Code '123456', got %q", resp.Data.Code)
+	}
 	if resp.Data.Price != 125.5 {
 		t.Errorf("Expected Price 125.5, got %v", resp.Data.Price)
 	}

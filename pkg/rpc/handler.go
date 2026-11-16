@@ -50,8 +50,10 @@ func Register[TInput any, TOutput any](cfg FunctionConfig[TInput, TOutput]) *Fun
 		// If input is already of type TInput (e.g. from in-process caller)
 		// Otherwise marshal map -> json -> struct
 		if rawInput != nil {
-			if rawMap, ok := rawInput.(map[string]any); ok {
-				rawInput = coerceRawMapToType(inputType, rawMap)
+			if cType == "multipart/form-data" {
+				if rawMap, ok := rawInput.(map[string]any); ok {
+					rawInput = coerceRawMapToType(inputType, rawMap)
+				}
 			}
 			bytes, err := json.Marshal(rawInput)
 			if err != nil {

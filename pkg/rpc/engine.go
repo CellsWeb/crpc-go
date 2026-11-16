@@ -403,8 +403,9 @@ func (app *CoreRPC) handleMultipartRPC(reqCtx *fasthttp.RequestCtx, ctx *Context
 		return
 	}
 
-	// Validate input schema
+	// Coerce multipart string fields to declared schema types before validation
 	if fn.InputSchema != nil {
+		schema.CoerceMultipartData(fn.InputSchema, parsed.Data)
 		validationErrors := schema.Validate(fn.InputSchema, parsed.Data, "")
 		if len(validationErrors) > 0 {
 			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrValidation, fmt.Sprintf("Input validation failed: %d field error(s)", len(validationErrors)), validationErrors, start)

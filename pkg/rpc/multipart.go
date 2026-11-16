@@ -9,7 +9,6 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
-	"strconv"
 	"strings"
 
 	"github.com/valyala/fasthttp"
@@ -128,20 +127,6 @@ func ParseMultipartPhase2(reqCtx *fasthttp.RequestCtx, maxSizeBytes int64, maxFi
 			var parsed any
 			if err := json.Unmarshal([]byte(trimmed), &parsed); err == nil {
 				return sanitizeParsedJSON(parsed)
-			}
-		}
-		if trimmed == "true" {
-			return true
-		}
-		if trimmed == "false" {
-			return false
-		}
-		if trimmed == "null" {
-			return nil
-		}
-		if isNumericString(trimmed) {
-			if f, err := strconv.ParseFloat(trimmed, 64); err == nil {
-				return f
 			}
 		}
 		return val
@@ -310,19 +295,4 @@ func sanitizeParsedJSON(val any) any {
 	default:
 		return val
 	}
-}
-
-func isNumericString(s string) bool {
-	if s == "" {
-		return false
-	}
-	// Avoid multi-digit strings with leading zero (e.g. phone numbers or zip codes like "01712")
-	if len(s) > 1 && s[0] == '0' && s[1] != '.' {
-		return false
-	}
-	if len(s) > 2 && s[0] == '-' && s[1] == '0' && s[2] != '.' {
-		return false
-	}
-	_, err := strconv.ParseFloat(s, 64)
-	return err == nil
 }

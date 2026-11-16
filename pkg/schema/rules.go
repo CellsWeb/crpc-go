@@ -3,6 +3,7 @@ package schema
 import (
 	"fmt"
 	"reflect"
+	"strconv"
 	"strings"
 )
 
@@ -274,5 +275,49 @@ func ruleFromType(t reflect.Type) *SchemaRule {
 		return FromStruct(inst)
 	default:
 		return &SchemaRule{Type: RuleType(fmt.Sprintf("%v", t.Kind()))}
+	}
+}
+
+// CoerceMultipartData coerces string values in data to numbers or booleans if the schema rule requires it
+func CoerceMultipartData(rule *SchemaRule, data map[string]any) {
+	if rule == nil || data == nil || rule.Properties == nil {
+		return
+	}
+
+	for k, prop := range rule.Properties {
+		val, exists := data[k]
+		if !exists || val == nil {
+			continue
+		}
+
+		s, isStr := val.(string)
+		if !isStr {
+			if prop.Type == TypeObject && prop.Properties != nil {
+				if nestedMap, ok := val.(map[string]any); ok {
+					CoerceMultipartData(prop, nestedMap)
+				}
+			}
+			continue
+		}
+
+		switch prop.Type {
+		case TypeBoolean:
+			trimmed := strings.ToLower(strings.TrimSpace(s))
+			if trimmed == "true" || trimmed == "1" {
+				data[k] = true
+			} else if trimmed == "false" || trimmed == "0" {
+				data[k] = false
+			}
+		case TypeInteger:
+			trimmed := strings.TrimSpace(s)
+			if iv, err := strconv.ParseInt(trimmed, 10, 64); err == nil {
+				data[k] = iv
+			}
+		case TypeNumber:
+			trimmed := strings.TrimSpace(s)
+			if fv, err := strconv.ParseFloat(trimmed, 64); err == nil {
+				data[k] = fv
+			}
+		}
 	}
 }
