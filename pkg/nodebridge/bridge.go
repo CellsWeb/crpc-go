@@ -77,6 +77,50 @@ func ServeStdio(app *rpc.CoreRPC) error {
 // MaxIPCFrameSize limits single frames over IPC to 2 MB to prevent memory exhaustion
 const MaxIPCFrameSize = 2 * 1024 * 1024
 
+var errIPCFrameTooLarge = fmt.Errorf("Frame size exceeds limit of %d bytes", MaxIPCFrameSize)
+
+// readLineFrame includes the newline in the existing size limit. Small frames borrow
+// the reader buffer; long frames allocate one fixed, capped buffer without growing it.
+func readLineFrame(reader *bufio.Reader) ([]byte, error) {
+	fragment, err := reader.ReadSlice('\n')
+	if len(fragment) > MaxIPCFrameSize {
+		return nil, errIPCFrameTooLarge
+	}
+	if err != bufio.ErrBufferFull {
+		return fragment, err
+	}
+
+	frame := make([]byte, MaxIPCFrameSize+1)
+	n := copy(frame, fragment)
+	for {
+		// Near the limit, do not wait for ReadSlice to fill another whole fragment:
+		// the very next byte may already prove that an unterminated frame is too large.
+		if MaxIPCFrameSize-n < reader.Size() {
+			b, readErr := reader.ReadByte()
+			if readErr != nil {
+				return frame[:n], readErr
+			}
+			frame[n] = b
+			n++
+			if n > MaxIPCFrameSize {
+				return nil, errIPCFrameTooLarge
+			}
+			if b == '\n' {
+				return frame[:n], nil
+			}
+			continue
+		}
+		fragment, err = reader.ReadSlice('\n')
+		n += copy(frame[n:], fragment)
+		if n > MaxIPCFrameSize {
+			return nil, errIPCFrameTooLarge
+		}
+		if err != bufio.ErrBufferFull {
+			return frame[:n], err
+		}
+	}
+}
+
 // ServeUnixSocket runs a Unix Domain Socket listener with explicit 0600 permissions
 func ServeUnixSocket(app *rpc.CoreRPC, socketPath string) error {
 	dir := filepath.Dir(socketPath)
@@ -133,15 +177,16 @@ func handleSocketConn(app *rpc.CoreRPC, conn net.Conn) {
 
 		if peek[0] == '{' {
 			// Newline-delimited JSON frame (bounded to MaxIPCFrameSize)
-			line, err := reader.ReadBytes('\n')
-			if err != nil {
-				return
-			}
-			if len(line) > MaxIPCFrameSize {
+			line, err := readLineFrame(reader)
+			if err == errIPCFrameTooLarge {
+				_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				sendBridgeResponse(writer, BridgeResponse{
 					Status: "error",
-					Error:  fmt.Sprintf("Frame size %d exceeds limit of %d bytes", len(line), MaxIPCFrameSize),
+					Error:  err.Error(),
 				})
+				return
+			}
+			if err != nil {
 				return
 			}
 			payloadBytes = line
@@ -153,6 +198,7 @@ func handleSocketConn(app *rpc.CoreRPC, conn net.Conn) {
 			}
 			frameLen := binary.BigEndian.Uint32(header)
 			if frameLen > MaxIPCFrameSize {
+				_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 				sendBridgeResponse(writer, BridgeResponse{
 					Status: "error",
 					Error:  fmt.Sprintf("Frame length %d exceeds limit of %d bytes", frameLen, MaxIPCFrameSize),
@@ -168,6 +214,7 @@ func handleSocketConn(app *rpc.CoreRPC, conn net.Conn) {
 
 		var req BridgeRequest
 		if err := json.Unmarshal(payloadBytes, &req); err != nil {
+			_ = conn.SetWriteDeadline(time.Now().Add(30 * time.Second))
 			sendBridgeResponse(writer, BridgeResponse{
 				Status: "error",
 				Error:  fmt.Sprintf("Invalid JSON: %v", err),
