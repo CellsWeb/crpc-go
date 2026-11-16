@@ -4,6 +4,8 @@ import (
 	"encoding/json"
 	"fmt"
 	"reflect"
+	"strconv"
+	"strings"
 
 	"github.com/CellsWeb/crpc-go/pkg/schema"
 )
@@ -48,6 +50,9 @@ func Register[TInput any, TOutput any](cfg FunctionConfig[TInput, TOutput]) *Fun
 		// If input is already of type TInput (e.g. from in-process caller)
 		// Otherwise marshal map -> json -> struct
 		if rawInput != nil {
+			if rawMap, ok := rawInput.(map[string]any); ok {
+				rawInput = coerceRawMapToType(inputType, rawMap)
+			}
 			bytes, err := json.Marshal(rawInput)
 			if err != nil {
 				return nil, NewError(ErrInvalidBody, fmt.Sprintf("Failed to encode input: %v", err))
@@ -98,8 +103,11 @@ func injectFilesIntoStruct(target any, raw map[string]any) {
 	for i := 0; i < t.NumField(); i++ {
 		field := t.Field(i)
 		jsonTag := field.Tag.Get("json")
+		if jsonTag == "-" {
+			continue
+		}
 		fieldName := field.Name
-		if jsonTag != "" && jsonTag != "-" {
+		if jsonTag != "" {
 			parts := stringsSplit(jsonTag, ",")
 			if parts[0] != "" {
 				fieldName = parts[0]
@@ -138,6 +146,33 @@ func injectFilesIntoStruct(target any, raw map[string]any) {
 				continue
 			}
 
+			// 2b. Mixed slice []any containing *UploadedFile
+			if fieldVal.Type() == reflect.TypeOf(([]any)(nil)) {
+				if slice, ok := rawVal.([]any); ok {
+					hasFile := false
+					for _, item := range slice {
+						if _, ok := item.(*UploadedFile); ok {
+							hasFile = true
+							break
+						}
+					}
+					if hasFile {
+						fieldVal.Set(reflect.ValueOf(slice))
+					}
+				} else if file, ok := rawVal.(*UploadedFile); ok {
+					fieldVal.Set(reflect.ValueOf([]any{file}))
+				}
+				continue
+			}
+
+			// 2c. Interface / any field holding an UploadedFile
+			if fieldVal.Kind() == reflect.Interface {
+				if file, ok := rawVal.(*UploadedFile); ok {
+					fieldVal.Set(reflect.ValueOf(file))
+					continue
+				}
+			}
+
 			// 3. Nested struct or pointer to struct
 			if nestedMap, ok := rawVal.(map[string]any); ok {
 				if fieldVal.Kind() == reflect.Struct {
@@ -148,6 +183,84 @@ func injectFilesIntoStruct(target any, raw map[string]any) {
 			}
 		}
 	}
+}
+
+// coerceRawMapToType aligns raw map primitive strings (from multipart or loose JSON) to match target struct field types
+func coerceRawMapToType(t reflect.Type, raw map[string]any) map[string]any {
+	if raw == nil || t == nil {
+		return raw
+	}
+	if t.Kind() == reflect.Pointer {
+		t = t.Elem()
+	}
+	if t.Kind() != reflect.Struct {
+		return raw
+	}
+
+	result := make(map[string]any, len(raw))
+	for k, v := range raw {
+		result[k] = v
+	}
+
+	for i := 0; i < t.NumField(); i++ {
+		field := t.Field(i)
+		jsonTag := field.Tag.Get("json")
+		if jsonTag == "-" {
+			continue
+		}
+		fieldName := field.Name
+		if jsonTag != "" {
+			parts := stringsSplit(jsonTag, ",")
+			if parts[0] != "" {
+				fieldName = parts[0]
+			}
+		}
+
+		val, exists := result[fieldName]
+		if !exists || val == nil {
+			continue
+		}
+
+		ft := field.Type
+		if ft.Kind() == reflect.Pointer {
+			ft = ft.Elem()
+		}
+
+		switch ft.Kind() {
+		case reflect.Bool:
+			if s, ok := val.(string); ok {
+				trimmed := strings.ToLower(strings.TrimSpace(s))
+				if trimmed == "true" || trimmed == "1" {
+					result[fieldName] = true
+				} else if trimmed == "false" || trimmed == "0" {
+					result[fieldName] = false
+				}
+			}
+		case reflect.Int, reflect.Int8, reflect.Int16, reflect.Int32, reflect.Int64:
+			if s, ok := val.(string); ok {
+				if iv, err := strconv.ParseInt(strings.TrimSpace(s), 10, 64); err == nil {
+					result[fieldName] = iv
+				}
+			}
+		case reflect.Uint, reflect.Uint8, reflect.Uint16, reflect.Uint32, reflect.Uint64:
+			if s, ok := val.(string); ok {
+				if uv, err := strconv.ParseUint(strings.TrimSpace(s), 10, 64); err == nil {
+					result[fieldName] = uv
+				}
+			}
+		case reflect.Float32, reflect.Float64:
+			if s, ok := val.(string); ok {
+				if fv, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil {
+					result[fieldName] = fv
+				}
+			}
+		case reflect.Struct:
+			if nestedMap, ok := val.(map[string]any); ok {
+				result[fieldName] = coerceRawMapToType(ft, nestedMap)
+			}
+		}
+	}
+	return result
 }
 
 func stringsSplit(s, sep string) []string {

@@ -21,6 +21,11 @@ type TestCaller struct {
 	defaultOptions TestOptions
 }
 
+// InjectFilesForTest exposes injectFilesIntoStruct for test suites
+func InjectFilesForTest(target any, raw map[string]any) {
+	injectFilesIntoStruct(target, raw)
+}
+
 // NewTestCaller initializes a TestCaller
 func NewTestCaller(app *CoreRPC, defaultOptions ...TestOptions) *TestCaller {
 	opts := TestOptions{}
