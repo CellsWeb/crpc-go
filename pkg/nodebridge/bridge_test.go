@@ -2,14 +2,17 @@ package nodebridge
 
 import (
 	"bufio"
+	"bytes"
 	"encoding/binary"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net"
 	"os"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -18,6 +21,405 @@ import (
 	"github.com/CellsWeb/crpc-go/pkg/rpc"
 	"github.com/CellsWeb/crpc-go/pkg/schema"
 )
+
+// Generate an unterminated frame without allocating the adversarial input itself.
+type generatedFrameConn struct {
+	remaining int
+	readBytes int
+	response  bytes.Buffer
+	closed    bool
+}
+
+func (c *generatedFrameConn) Read(p []byte) (int, error) {
+	if c.remaining == 0 {
+		return 0, io.EOF
+	}
+	n := min(len(p), c.remaining)
+	for i := range p[:n] {
+		p[i] = 'x'
+	}
+	if c.readBytes == 0 {
+		p[0] = '{'
+	}
+	c.readBytes += n
+	c.remaining -= n
+	return n, nil
+}
+func (c *generatedFrameConn) Write(p []byte) (int, error)    { return c.response.Write(p) }
+func (c *generatedFrameConn) Close() error                   { c.closed = true; return nil }
+func (*generatedFrameConn) LocalAddr() net.Addr              { return &net.UnixAddr{Net: "unix"} }
+func (*generatedFrameConn) RemoteAddr() net.Addr             { return &net.UnixAddr{Net: "unix"} }
+func (*generatedFrameConn) SetDeadline(time.Time) error      { return nil }
+func (*generatedFrameConn) SetReadDeadline(time.Time) error  { return nil }
+func (*generatedFrameConn) SetWriteDeadline(time.Time) error { return nil }
+
+func TestIPCUnterminatedFrameAllocationBound(t *testing.T) {
+	app, err := rpc.New(rpc.Config{RpcPath: "/rpc", CORS: &rpc.CorsConfig{AllowOrigins: []string{"*"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	conn := &generatedFrameConn{remaining: 3 * 1024 * 1024}
+	// Warm the error serializer so one-time reflection caches do not obscure read allocation.
+	_, _ = json.Marshal(BridgeResponse{Status: "error", Error: "warmup"})
+	var before, after runtime.MemStats
+	runtime.ReadMemStats(&before)
+	handleSocketConn(app, conn)
+	runtime.ReadMemStats(&after)
+	allocated := after.TotalAlloc - before.TotalAlloc
+	t.Logf("read=%d allocated=%d response=%q closed=%v", conn.readBytes, allocated, conn.response.String(), conn.closed)
+	// Allow fixed bufio buffers, error encoding, and modest runtime overhead, not an input-sized copy.
+	if allocated > MaxIPCFrameSize+128*1024 {
+		t.Errorf("frame read allocated %d bytes; expected a bounded frame buffer plus fixed overhead", allocated)
+	}
+	if conn.readBytes > MaxIPCFrameSize+4096 {
+		t.Errorf("consumed %d unterminated bytes instead of stopping at the limit plus fixed bufio read-ahead", conn.readBytes)
+	}
+	var response BridgeResponse
+	if err := json.Unmarshal(conn.response.Bytes(), &response); err != nil || response.Status != "error" || !strings.Contains(response.Error, "exceeds limit") || !conn.closed {
+		t.Errorf("expected framing error and closed connection, response=%+v err=%v", response, err)
+	}
+}
+
+func TestIPCOversizedNoNewlineRejected(t *testing.T) {
+	app, err := rpc.New(rpc.Config{RpcPath: "/rpc", CORS: &rpc.CorsConfig{AllowOrigins: []string{"*"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var calls atomic.Int32
+	app.RegisterFunction(&rpc.FunctionDefinition{Namespace: "frames", FunctionName: "echo", Handler: func(*rpc.Context, any) (any, error) {
+		calls.Add(1)
+		return nil, nil
+	}})
+	conn, reader := newPayloadSocket(t, app)
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	payload := bytes.Repeat([]byte{'x'}, 3*1024*1024)
+	payload[0] = '{'
+	writeDone := make(chan error, 1)
+	go func() { _, err := conn.Write(payload); writeDone <- err }()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		select {
+		case <-writeDone:
+		case <-time.After(3 * time.Second):
+			t.Error("unterminated-frame writer did not exit")
+		}
+	})
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		t.Fatalf("expected rejection before EOF/newline: %v", err)
+	}
+	var response BridgeResponse
+	if err := json.Unmarshal(line, &response); err != nil || response.Status != "error" || !strings.Contains(response.Error, "exceeds limit") {
+		t.Fatalf("expected framing error, got %q err=%v", line, err)
+	}
+	if calls.Load() != 0 {
+		t.Fatal("oversized frame reached handler")
+	}
+	if _, err := reader.ReadByte(); err == nil {
+		t.Fatal("expected closed connection after oversized frame")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("connection remained open after framing error")
+	}
+}
+
+const frameRequestPrefix = `{"id":"frame","function":"frames.echo","headers":{"x-token":"valid"},"data":"`
+
+func frameRequest(size int) []byte {
+	return []byte(frameRequestPrefix + strings.Repeat("x", size-len(frameRequestPrefix)-2) + `"}`)
+}
+
+func frameWire(payload []byte, framing string) []byte {
+	if framing == "line" {
+		return append(append([]byte(nil), payload...), '\n')
+	}
+	wire := make([]byte, 4+len(payload))
+	binary.BigEndian.PutUint32(wire, uint32(len(payload)))
+	copy(wire[4:], payload)
+	return wire
+}
+
+func frameApp(t *testing.T) (*rpc.CoreRPC, *atomic.Int32, *atomic.Int32) {
+	t.Helper()
+	app, err := rpc.New(rpc.Config{RpcPath: "/rpc", CORS: &rpc.CorsConfig{AllowOrigins: []string{"*"}}})
+	if err != nil {
+		t.Fatal(err)
+	}
+	middlewareCalls, handlerCalls := new(atomic.Int32), new(atomic.Int32)
+	app.RegisterMiddleware("frameAuth", "Enforces auth", func(ctx *rpc.Context, headers map[string]string, _ map[string]any) error {
+		middlewareCalls.Add(1)
+		if headers["x-token"] != "valid" {
+			return rpc.NewError(rpc.ErrUnauthorized, "Invalid token")
+		}
+		ctx.Set("actor", "reader")
+		return nil
+	}, nil, nil)
+	app.RegisterFunction(&rpc.FunctionDefinition{
+		Namespace: "frames", FunctionName: "echo", InputSchema: schema.String(),
+		Middlewares: rpc.DefineMiddlewares(rpc.M("frameAuth", nil)),
+		Handler: func(ctx *rpc.Context, input any) (any, error) {
+			handlerCalls.Add(1)
+			if actor, _ := ctx.Get("actor"); actor != "reader" {
+				return nil, fmt.Errorf("middleware context was lost")
+			}
+			return map[string]any{"bytes": len(input.(string))}, nil
+		},
+	})
+	return app, middlewareCalls, handlerCalls
+}
+
+func asyncFrameWrite(t *testing.T, conn net.Conn, wire []byte) <-chan struct{} {
+	t.Helper()
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan struct{})
+	go func() { _, _ = conn.Write(wire); close(done) }()
+	t.Cleanup(func() {
+		_ = conn.Close()
+		select {
+		case <-done:
+		case <-time.After(3 * time.Second):
+			t.Error("frame writer did not exit")
+		}
+	})
+	return done
+}
+
+func readFrameResponse(t *testing.T, reader *bufio.Reader) BridgeResponse {
+	t.Helper()
+	line, err := reader.ReadBytes('\n')
+	if err != nil {
+		t.Fatal(err)
+	}
+	var response BridgeResponse
+	if err := json.Unmarshal(line, &response); err != nil {
+		t.Fatalf("invalid response %q: %v", line, err)
+	}
+	return response
+}
+
+func TestIPCFrameBoundaries(t *testing.T) {
+	for _, framing := range []string{"line", "length"} {
+		for _, below := range []int{1, 0} {
+			t.Run(fmt.Sprintf("%s_below_limit_%d", framing, below), func(t *testing.T) {
+				app, middlewareCalls, handlerCalls := frameApp(t)
+				conn, reader := newPayloadSocket(t, app)
+				size := MaxIPCFrameSize - below
+				if framing == "line" {
+					size-- // The existing line-frame limit includes the newline delimiter.
+				}
+				asyncFrameWrite(t, conn, frameWire(frameRequest(size), framing))
+				response := readFrameResponse(t, reader)
+				data, _ := response.Data.(map[string]any)
+				if response.Status != "ok" || response.ID != "frame" || data["bytes"] != float64(size-len(frameRequestPrefix)-2) || middlewareCalls.Load() != 1 || handlerCalls.Load() != 1 {
+					t.Fatalf("exact/below-limit request failed: %+v", response)
+				}
+			})
+		}
+	}
+}
+
+func TestIPCOversizedFrameVariants(t *testing.T) {
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, MaxIPCFrameSize+1)
+	for _, tc := range []struct {
+		name string
+		wire []byte
+	}{
+		{"line_one_byte_over", frameWire(frameRequest(MaxIPCFrameSize), "line")},
+		{"line_three_mib", frameWire(frameRequest(3*1024*1024), "line")},
+		{"no_newline_one_byte_over", append([]byte{'{'}, bytes.Repeat([]byte{'x'}, MaxIPCFrameSize)...)},
+		{"length_header_only_over_limit", header},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, middlewareCalls, handlerCalls := frameApp(t)
+			conn, reader := newPayloadSocket(t, app)
+			asyncFrameWrite(t, conn, tc.wire)
+			response := readFrameResponse(t, reader)
+			if response.Status != "error" || !strings.Contains(response.Error, "exceeds limit") || middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+				t.Fatalf("expected framing rejection without dispatch, got %+v", response)
+			}
+			if _, err := reader.ReadByte(); err == nil {
+				t.Fatal("expected connection closure")
+			} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+				t.Fatal("oversized connection was not closed")
+			}
+		})
+	}
+}
+
+func TestIPCFrameRecoveryAndCoalescing(t *testing.T) {
+	for _, framing := range []string{"line", "length"} {
+		t.Run(framing, func(t *testing.T) {
+			app, middlewareCalls, handlerCalls := frameApp(t)
+			conn, reader := newPayloadSocket(t, app)
+			size := MaxIPCFrameSize
+			if framing == "line" {
+				size--
+			}
+			wire := frameWire([]byte(`{"id":}`), framing)
+			wire = append(wire, frameWire(frameRequest(size), framing)...)
+			// Alternate framing modes on the same connection after the large frame.
+			wire = append(wire, frameWire(frameRequest(128), "length")...)
+			wire = append(wire, frameWire(frameRequest(129), "line")...)
+			asyncFrameWrite(t, conn, wire)
+			if response := readFrameResponse(t, reader); response.Status != "error" || !strings.HasPrefix(response.Error, "Invalid JSON:") {
+				t.Fatalf("expected malformed JSON error, got %+v", response)
+			}
+			for _, expectedSize := range []int{size, 128, 129} {
+				response := readFrameResponse(t, reader)
+				data, _ := response.Data.(map[string]any)
+				if response.Status != "ok" || response.ID != "frame" || data["bytes"] != float64(expectedSize-len(frameRequestPrefix)-2) {
+					t.Fatalf("framing lost synchronization after malformed/large request: %+v", response)
+				}
+			}
+			if middlewareCalls.Load() != 3 || handlerCalls.Load() != 3 {
+				t.Fatal("malformed request dispatched or valid frames were lost")
+			}
+		})
+	}
+}
+
+func TestIPCPartialFramesCleanup(t *testing.T) {
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, 100)
+	for _, tc := range []struct {
+		name string
+		wire []byte
+	}{
+		{"empty", nil}, {"line", []byte(`{"id":`)}, {"length_header", header[:2]},
+		{"length_body", append(append([]byte(nil), header...), '{')},
+		{"exact_limit_without_newline", frameRequest(MaxIPCFrameSize)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, middlewareCalls, handlerCalls := frameApp(t)
+			conn, reader := newPayloadSocket(t, app)
+			done := asyncFrameWrite(t, conn, tc.wire)
+			<-done
+			if err := conn.(*net.UnixConn).CloseWrite(); err != nil {
+				t.Fatal(err)
+			}
+			if _, err := reader.ReadByte(); err == nil {
+				t.Fatal("partial frames must close without dispatch or a complete reply")
+			} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+				t.Fatal("partial frame was not released after EOF")
+			}
+			if middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+				t.Fatal("partial frame dispatched")
+			}
+		})
+	}
+}
+
+type frameDeadlineConn struct {
+	net.Conn
+	readBudget, writeBudget time.Duration
+	closed                  atomic.Bool
+}
+
+func (c *frameDeadlineConn) SetReadDeadline(deadline time.Time) error {
+	c.readBudget = time.Until(deadline)
+	return c.Conn.SetReadDeadline(time.Now().Add(40 * time.Millisecond))
+}
+func (c *frameDeadlineConn) SetWriteDeadline(deadline time.Time) error {
+	c.writeBudget = time.Until(deadline)
+	return c.Conn.SetWriteDeadline(time.Now().Add(40 * time.Millisecond))
+}
+func (c *frameDeadlineConn) Close() error { c.closed.Store(true); return c.Conn.Close() }
+
+func deadlineFrameSocket(t *testing.T, app *rpc.CoreRPC) (net.Conn, *frameDeadlineConn, <-chan struct{}) {
+	t.Helper()
+	server, peer := net.Pipe()
+	conn := &frameDeadlineConn{Conn: server}
+	done := make(chan struct{})
+	go func() { handleSocketConn(app, conn); close(done) }()
+	t.Cleanup(func() {
+		_ = peer.Close()
+		_ = server.Close()
+		select {
+		case <-done:
+		case <-time.After(time.Second):
+			t.Error("deadline handler did not exit")
+		}
+	})
+	return peer, conn, done
+}
+
+func TestIPCReadDeadlineCleanup(t *testing.T) {
+	for _, partial := range [][]byte{nil, []byte(`{"id":`), {0, 0}, {0, 0, 0, 100, '{'}} {
+		t.Run(fmt.Sprintf("partial_%x", partial), func(t *testing.T) {
+			app, middlewareCalls, handlerCalls := frameApp(t)
+			peer, conn, done := deadlineFrameSocket(t, app)
+			if len(partial) > 0 {
+				if _, err := peer.Write(partial); err != nil {
+					t.Fatal(err)
+				}
+			}
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("stalled reader did not honor deadline")
+			}
+			if !conn.closed.Load() || conn.readBudget < 59*time.Second || conn.readBudget > 60*time.Second || middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+				t.Fatalf("read deadline or cleanup changed: budget=%v closed=%v", conn.readBudget, conn.closed.Load())
+			}
+		})
+	}
+}
+
+func TestIPCWriteDeadlineCleanup(t *testing.T) {
+	header := make([]byte, 4)
+	binary.BigEndian.PutUint32(header, MaxIPCFrameSize+1)
+	for _, tc := range []struct {
+		name string
+		wire []byte
+	}{
+		{"oversized_length", header},
+		{"oversized_line", frameWire(frameRequest(MaxIPCFrameSize), "line")},
+		{"malformed_json", []byte("{bad}\n")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			app, middlewareCalls, handlerCalls := frameApp(t)
+			peer, conn, done := deadlineFrameSocket(t, app)
+			if _, err := peer.Write(tc.wire); err != nil {
+				t.Fatal(err)
+			}
+			// Deliberately do not read the response: error writes must also be bounded.
+			select {
+			case <-done:
+			case <-time.After(time.Second):
+				t.Fatal("error response blocked without a write deadline")
+			}
+			if !conn.closed.Load() || conn.writeBudget < 29*time.Second || conn.writeBudget > 30*time.Second || middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+				t.Fatalf("write deadline or cleanup missing: budget=%v closed=%v", conn.writeBudget, conn.closed.Load())
+			}
+		})
+	}
+}
+
+func TestIPCSlowFragmentedFrame(t *testing.T) {
+	app, middlewareCalls, handlerCalls := frameApp(t)
+	conn, reader := newPayloadSocket(t, app)
+	if err := conn.SetDeadline(time.Now().Add(3 * time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	wire := frameWire(frameRequest(128), "line")
+	if _, err := conn.Write(wire[:32]); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(20 * time.Millisecond)
+	if middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+		t.Fatal("unfinished slow frame dispatched")
+	}
+	if _, err := conn.Write(wire[32:]); err != nil {
+		t.Fatal(err)
+	}
+	if response := readFrameResponse(t, reader); response.Status != "ok" || handlerCalls.Load() != 1 {
+		t.Fatalf("slow complete frame failed: %+v", response)
+	}
+}
 
 // Use a real Unix socket and the production connection handler, with bounded test shutdown.
 // ServeUnixSocket's public listener/permissions are covered by the existing test below.
