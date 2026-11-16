@@ -1,14 +1,179 @@
 package rpc_test
 
 import (
+	"bufio"
+	"bytes"
+	"encoding/json"
 	"fmt"
+	"io"
+	"mime/multipart"
+	"net"
+	"net/http"
+	"os"
+	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/CellsWeb/crpc-go/pkg/rpc"
 	"github.com/CellsWeb/crpc-go/pkg/schema"
 	"github.com/valyala/fasthttp"
 )
+
+func TestDuplicateRoutingHeadersRejection(t *testing.T) {
+	app, err := rpc.New(rpc.Config{
+		RpcPath: "/rpc",
+		CORS:    &rpc.CorsConfig{AllowOrigins: []string{"*"}},
+	})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var middlewareCalls, handlerCalls atomic.Int32
+	app.RegisterMiddleware("routingGuard", "Counts dispatches", func(*rpc.Context, map[string]string, map[string]any) error {
+		middlewareCalls.Add(1)
+		return nil
+	}, nil, nil)
+	app.RegisterFunction(&rpc.FunctionDefinition{
+		Namespace:    "admin",
+		FunctionName: "upload",
+		ContentType:  "multipart/form-data",
+		Middlewares:  rpc.DefineMiddlewares(rpc.M("routingGuard", nil)),
+		Handler: func(_ *rpc.Context, input any) (any, error) {
+			handlerCalls.Add(1)
+			file, ok := input.(map[string]any)["file"].(*rpc.UploadedFile)
+			if !ok || file.TempPath() == "" {
+				return nil, fmt.Errorf("expected a disk-backed upload")
+			}
+			if _, err := os.Stat(file.TempPath()); err != nil {
+				return nil, err
+			}
+			return map[string]any{"accepted": true}, nil
+		},
+	})
+
+	// Exercise native fasthttp HTTP parsing; an adaptor or Header.Set would hide duplicates.
+	listener, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	server := &fasthttp.Server{Handler: app.Handler(), ReadTimeout: 5 * time.Second, WriteTimeout: 5 * time.Second}
+	serveDone := make(chan error, 1)
+	go func() { serveDone <- server.Serve(listener) }()
+	t.Cleanup(func() {
+		if err := server.Shutdown(); err != nil {
+			t.Error(err)
+		}
+		if err := <-serveDone; err != nil {
+			t.Error(err)
+		}
+	})
+
+	var body bytes.Buffer
+	writer := multipart.NewWriter(&body)
+	for _, field := range [][2]string{{"namespace", "admin"}, {"functionName", "upload"}} {
+		if err := writer.WriteField(field[0], field[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+	file, err := writer.CreateFormFile("file", "proof.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := io.WriteString(file, "CRPC-001 upload proof"); err != nil {
+		t.Fatal(err)
+	}
+	if err := writer.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	const ns = "X-CRPC-Namespace: admin\r\n"
+	const fn = "X-CRPC-Function: upload\r\n"
+	for _, tc := range []struct {
+		name    string
+		headers string
+		valid   bool
+	}{
+		{"namespace_conflicting", ns + "X-CRPC-Namespace: public\r\n" + fn, false},
+		{"namespace_identical", ns + ns + fn, false},
+		{"function_conflicting", ns + fn + "X-CRPC-Function: other\r\n", false},
+		{"function_identical", ns + fn + fn, false},
+		{"namespace_mixed_case", ns + "x-cRpC-nAmEsPaCe: public\r\n" + fn, false},
+		{"function_mixed_case", ns + fn + "x-cRpC-fUnCtIoN: other\r\n", false},
+		{"namespace_empty_first", "X-CRPC-Namespace:\r\n" + ns + fn, false},
+		{"function_empty_second", ns + fn + "X-CRPC-Function:\r\n", false},
+		{"both_duplicated", ns + ns + fn + fn, false},
+		{"single_headers", ns + fn, true},
+		{"headerless_fallback", "", true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			// A fresh, absent upload directory proves rejection happened before file creation,
+			// rather than merely observing an empty directory after cleanup.
+			tmpDir := t.TempDir()
+			t.Setenv("TMPDIR", tmpDir)
+			middlewareCalls.Store(0)
+			handlerCalls.Store(0)
+			conn, err := net.DialTimeout("tcp4", listener.Addr().String(), 5*time.Second)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer conn.Close()
+			if err := conn.SetDeadline(time.Now().Add(5 * time.Second)); err != nil {
+				t.Fatal(err)
+			}
+			_, err = fmt.Fprintf(conn, "POST /rpc HTTP/1.1\r\nHost: localhost\r\nConnection: close\r\nContent-Type: %s\r\nContent-Length: %d\r\n%s\r\n%s",
+				writer.FormDataContentType(), body.Len(), tc.headers, body.String())
+			if err != nil {
+				t.Fatal(err)
+			}
+			response, err := http.ReadResponse(bufio.NewReader(conn), nil)
+			if err != nil {
+				t.Fatal(err)
+			}
+			defer response.Body.Close()
+			payload, err := io.ReadAll(response.Body)
+			if err != nil {
+				t.Fatal(err)
+			}
+			var envelope struct {
+				Status  string `json:"status"`
+				Code    string `json:"code"`
+				Message string `json:"message"`
+			}
+			if err := json.Unmarshal(payload, &envelope); err != nil {
+				t.Fatalf("Invalid JSON response %q: %v", payload, err)
+			}
+			t.Logf("HTTP %d %s; middleware=%d handler=%d", response.StatusCode, payload, middlewareCalls.Load(), handlerCalls.Load())
+			if response.StatusCode != http.StatusOK {
+				t.Errorf("Expected HTTP 200, got %d", response.StatusCode)
+			}
+			uploadDir := filepath.Join(tmpDir, "crpc-uploads")
+			if tc.valid {
+				if envelope.Status != "ok" || middlewareCalls.Load() != 1 || handlerCalls.Load() != 1 {
+					t.Errorf("Expected successful upload and one middleware/handler call")
+				}
+				entries, err := os.ReadDir(uploadDir)
+				if err != nil || len(entries) != 0 {
+					t.Errorf("Expected upload cleanup, entries=%v err=%v", entries, err)
+				}
+				return
+			}
+			if envelope.Status != "error" || envelope.Code != rpc.ErrInvalidBody ||
+				envelope.Message != "Duplicate routing headers ('X-CRPC-Namespace' or 'X-CRPC-Function') in multipart request" {
+				t.Errorf("Expected duplicate routing header invalid_body error, got %s", payload)
+			}
+			if middlewareCalls.Load() != 0 || handlerCalls.Load() != 0 {
+				t.Errorf("Expected zero middleware/handler calls")
+			}
+			if _, err := os.Stat(uploadDir); !os.IsNotExist(err) {
+				t.Errorf("Expected no application upload directory to be created, got %v", err)
+			}
+			if entries, err := os.ReadDir(tmpDir); err != nil || len(entries) != 0 {
+				t.Errorf("Expected zero temporary files, entries=%v err=%v", entries, err)
+			}
+		})
+	}
+}
 
 type ProfileInput struct {
 	UserID string `json:"userId"`
