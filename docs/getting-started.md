@@ -1,210 +1,86 @@
----
-layout: default
-title: Getting Started
-nav_order: 2
----
+# Getting started
 
-# Getting Started
+## Release status
 
-This guide walks you through installing CellsWeb RPC Go, scaffolding a new project, and running your first RPC endpoint.
+Go >=1.27.4 is required. This branch prepares **v1.0.1**. The current public tag
+v1.0.0 is an older SDK without the verified hardening and docs fixes. A source
+binary printing 1.0.1 does not prove that module version is public.
 
----
+For the unpublished candidate, build the CLI from this checkout:
 
-## 🛠️ Prerequisites
-
-- **Go**: Version `1.27.4` or higher ([Download Go](https://go.dev/dl/))
-- **Operating System**: Linux, macOS, or Windows
-- **Git**
-
----
-
-## 🛠️ Step 1: Install the CLI Tool (`crpc-go`)
-
-Install the global CLI scaffolder anywhere from your terminal:
-
-```bash
-go install github.com/CellsWeb/crpc-go/cmd/crpc-go@latest
-```
-
-Verify your installation:
-
-```bash
-crpc-go --version
-```
-
----
-
-## 🚀 Step 2: Creating a New Project
-
-Use `crpc-go` to bootstrap a complete project with pre-configured directory layout and `go.mod`:
-
-```bash
-crpc-go init my-rpc-api
-cd my-rpc-api
-go mod tidy
-go build ./...
-```
-
-### SDK dependency and unreleased development
-
-Generated applications require `github.com/CellsWeb/crpc-go` as an ordinary
-versioned module. They do not contain a local `replace` directive or require a
-parent/sibling SDK checkout. A CLI installed with `go install ...@<version>`
-uses that installed module version for the generated SDK requirement.
-
-An unpublished source build cannot assume its Git commit is remotely available.
-It uses the existing published `v1.0.0` fallback, which `init` prints explicitly.
-This older release does **not** contain unreleased hardening fixes. No future tag
-is assumed or created. To test a candidate CLI and SDK checkout together, opt in
-to a local Go workspace after generating the application:
-
-```bash
-cd /path/to/my-rpc-api
+```sh
+go build -o /tmp/crpc-go-candidate ./cmd/crpc-go
+/tmp/crpc-go-candidate init /tmp/my-crpc-app
+cd /tmp/my-crpc-app
 go work init . /absolute/path/to/rpc-go
 go build ./...
 go run ./cmd/server
 ```
 
-Keep this machine-specific workspace local. `GOWORK=off go build ./...` uses the
-application's declared released dependency instead. Once the reviewed SDK and
-CLI are published together, install that exact CLI version and generate against
-the matching SDK version; no workspace is needed. The generated Go directive
-matches the current SDK minimum, `1.27.4`.
+Replace the absolute checkout path and keep this machine-specific workspace
+local. It explicitly selects the candidate SDK. Generated apps contain no
+parent/sibling `replace` and can build independently against a real released SDK.
 
-> **Adding to an Existing Project**:
-> If adding to an existing Go project that already has a `go.mod`, install the library inside your project folder:
-> ```bash
-> go get github.com/CellsWeb/crpc-go@latest
-> ```
+After approved publication of the new tag, the normal installation is:
 
-### Generated Project Layout
-
-The CLI generates a clean, scalable directory structure:
-
-```text
-my-rpc-api/
-├── cmd/
-│   ├── server/
-│   │   └── main.go          # Application entrypoint & HTTP server bootstrap
-│   └── codegen/
-│       └── main.go          # TypeScript declaration exporter
-├── functions/               # RPC Functions grouped by namespace
-│   └── user/
-│       └── getProfile/
-│           ├── contracts.go   # Types, Schemas & Metadata
-│           ├── middlewares.go # Middleware attachments
-│           └── run.go         # Handler execution logic & init() hook
-├── middlewares/             # Reusable middleware modules
-│   └── auth/
-│       ├── constants.go     # Options & Headers schemas
-│       └── run.go           # Middleware execution logic
-├── utils/                   # Helpers, storage engines, database drivers
-├── go.mod
-├── Makefile
-└── .env.example
+```sh
+go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1
+crpc-go init my-api
+cd my-api
+go mod tidy
+go build ./...
+crpc-go dev
 ```
 
----
+These versioned commands are a post-publication step; do not assume an uncreated
+tag resolves. Install binaries under GOBIN (or the default Go bin directory) and
+put that directory on PATH. The installed CLI's module version selects the SDK
+dependency. Local/VCS-stamped/development builds use the **existing older v1.0.0
+fallback**, because a local Git-derived pseudo-version may be unpublished.
+`GOWORK=off` selects the declared public dependency rather than your workspace.
 
-## ⚡ Scaffolding Functions & Middlewares
+## Generated layout and CLI
 
-### Create a New Function
+The app contains cmd/server/main.go, functions/user/getProfile and updateProfile,
+middlewares/auth, utilities, go.mod, Makefile and .env examples. Go functions
+register through init(); the server imports modules and calls UseGlobalRegistry.
+Add new module imports/registration deliberately; there is no filesystem function
+discovery or automatic TypeScript export CLI command in Go.
 
-```bash
+```sh
 crpc-go create:function --ns user --name updateEmail
-```
-
-For multipart file upload endpoints (e.g. image or document uploads):
-
-```bash
 crpc-go create:function --ns user --name uploadAvatar --multipart
+crpc-go create:middleware --name auth --desc 'Verify credentials'
+crpc-go build
 ```
 
-### Create a Reusable Middleware
+Use batch/file specs for generation where needed. Unlike Node's function CLI,
+Go has no `--middlewares` flag; edit the generated middleware attachments. The
+sample middleware is a no-op customization stub. Implement real verification
+before relying on auth; schema metadata does not do it for you.
 
-```bash
-crpc-go create:middleware --name rateLimit --desc "Per-IP rate limiter"
-```
+## Environment and docs
 
----
+Neither the generated binary nor `crpc-go dev` automatically loads .env. Export
+deployment values, or source the trusted shell-compatible generated file:
 
-## 🏃 Running the Application
-
-Generated servers read exported process environment variables. Neither the
-executable nor `crpc-go dev` automatically loads `.env`. To use the generated,
-trusted shell-compatible file in a POSIX shell, export it before starting:
-
-```bash
+```sh
 set -a
 . ./.env
 set +a
 go run ./cmd/server
 ```
 
-`DOCS_ENABLED=true` enables documentation and `false` disables it. Values are
-trimmed and case-insensitive; `1`/`0` and Go's `t`/`f` aliases also work. An unset
-or blank value preserves the existing default: enabled unless `NODE_ENV` is
-exactly `production`. An invalid nonblank value stops startup with a configuration
-error, including in production. `DOCS_PATH` selects the absolute docs endpoint,
-for example `/internal/docs`; an unset or blank value defaults to `/docs`.
+Final exported values win; sourcing replaces earlier exports, later exports
+replace sourced values. DOCS_ENABLED accepts trimmed case-insensitive true/false,
+1/0 and Go t/f aliases. Unset/blank uses `NODE_ENV != "production"`; invalid
+nonblank values stop startup, including production. DOCS_PATH trims and defaults
+to /docs. Core programmatic DocsEnabled/DocsPath are separate and read no env.
 
-The executable uses the final exported values. A sourced file replaces earlier
-shell assignments; exports after sourcing replace the file's values. A `.env`
-file that has not been exported has no effect. Existing programmatic
-`rpc.Config.DocsEnabled` / `DocsPath` behavior is unchanged. The legacy `IsPublic`
-field is deprecated and ignored; it controls neither documentation nor authorization.
+The current generated listener still hard-codes 0.0.0.0:4000 and /rpc. Although
+the env example includes PORT/HOST/RPC_PATH, main does not consume them; edit
+rpc.Config explicitly when deploying on another address/path. No new env parser
+or listener feature is introduced by these docs.
 
-Start the development server with live reload:
-
-```bash
-go run ./cmd/server
-```
-
-You will see the startup banner:
-
-```text
-⚡ CellsWeb RPC Go Engine running at http://0.0.0.0:4001/rpc
-📖 Interactive Docs available at http://0.0.0.0:4001/docs
-🔌 Node.js IPC Socket listening at /tmp/crpc.sock
-```
-
----
-
-## 🧪 Testing Your First RPC Call
-
-All RPC calls are dispatched via HTTP `POST /rpc`:
-
-```bash
-curl -X POST http://localhost:4001/rpc \
-  -H "Content-Type: application/json" \
-  -d '{
-    "namespace": "public",
-    "functionName": "hello",
-    "data": {
-      "name": "Alex"
-    }
-  }'
-```
-
-### Success Response (HTTP 200)
-
-```json
-{
-  "status": "ok",
-  "data": {
-    "greeting": "Hello, Alex! Welcome to CellsWeb RPC Go."
-  },
-  "meta": {
-    "requestId": "req_c7f8e3a1",
-    "durationMs": 0.42
-  }
-}
-```
-
-### Interactive Documentation
-
-Open your browser and navigate to:
-
-👉 **`http://localhost:4001/docs`**
-
-You will see the interactive dark-themed API portal, complete with 2-column input/output schema views, middleware controls, and copyable cURL commands!
+Deprecated IsPublic is ignored; docs availability is global, independent of
+middleware/auth and function execution. See [docs controls](interactive-docs.md).

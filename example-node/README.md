@@ -1,180 +1,33 @@
-# CellsWeb RPC Go — Node.js & Next.js IPC Integration
+# Node client for the Go Unix daemon
 
-This directory demonstrates how to seamlessly connect a **Node.js**, **Express**, **Fastify**, or **Next.js** application to a compiled **CellsWeb RPC Go** backend over high-speed **Unix Domain Socket IPC** (`/tmp/crpc.sock`).
+Use Node 24 LTS for the tested workflow and Go >=1.27.4 for the daemon. This source
+is part of the unpublishedv1.0.1 candidate; public v1.0.0 predates the verified
+socket-close/malformed-response and other hardening fixes.
 
----
-
-## ⚡ Why Unix Domain Socket IPC?
-
-| Feature | HTTP over `localhost:4001` | Unix Domain Socket IPC (`/tmp/crpc.sock`) |
-| :--- | :--- | :--- |
-| **Transport** | TCP Loopback (OS Network Stack) | Kernel Memory (Direct socket buffer) |
-| **Latency** | 200µs – 500µs | **20µs – 50µs** (10x faster) |
-| **Port Clashes** | Can collide with other services | Zero ports; isolated filesystem node |
-| **Network Security** | Must firewall `localhost` | Protected by OS file permissions (`0o600`) |
-| **Session Injection** | Cannot bypass DB middleware | `skipMiddlewares: true` + typed `context` injection |
-
----
-
-## 🔑 Crucial Architectural Rule: Context Namespacing
-
-When calling Go RPC functions from Node.js with `skipMiddlewares: true` (e.g., inside Next.js Server Actions where the user is already authenticated by NextAuth / Supabase / Clerk), **dependency injection context MUST be namespaced by the middleware's name**:
-
-```json
-{
-  "context": {
-    "auth": {
-      "user": {
-        "id": "usr_99",
-        "email": "user@example.com",
-        "role": "admin"
-      }
-    }
-  }
-}
-```
-
-> **Why?**
-> In Go, handlers read middleware output via `ctx.Get("auth")` (or `rpc.GetContext[AuthOutput](ctx, "auth")`).
-> When you pass `context: { auth: { user: ... } }`, Go maps it directly to `ctx.Set("auth", ...)`.
-> Your Go business logic behaves **identically** whether the context was populated by Go's `auth` middleware or injected by a Node.js session!
-
----
-
-## 🚀 Quickstart
-
-### 1. Start the Go RPC Server
-
-Make sure MongoDB is running, then start the Go server (which opens `/tmp/crpc.sock`):
-
-```bash
-cd ../example-mongo
-go run ./cmd/server
-```
-
-You will see:
-```text
-🔌 Node.js IPC Socket listening at /tmp/crpc.sock
-⚡ CellsWeb RPC Go Engine running at http://0.0.0.0:4001/rpc
-📖 Interactive Docs available at http://0.0.0.0:4001/docs
-```
-
-### 2. Generate TypeScript Types (`crpc.d.ts`)
-
-In the Go project, run the codegen script:
-
-```bash
-cd ../example-mongo
-go run ./cmd/codegen ../example-node/crpc.d.ts
-```
-
-This inspects all registered Go RPC functions and auto-generates exact TypeScript types into `example-node/crpc.d.ts`.
-
-### 3. Run the Node.js Client
-
-```bash
-cd ../example-node
+```sh
 npm install
-npm start
+npm run typecheck
+CRPC_IPC_TEST_RACE=1 npm test
 ```
 
----
+Tests build the client, start actual Go test daemons and exercise framing,
+correlation, concurrent calls, timeouts, corruption, reconnection/no replay and
+timer/listener cleanup. Running the demonstration index against a real app may
+require its example service/database; passing the test fixture is not a MongoDB
+deployment test.
 
-## 💻 Code Examples
+Copy src/client.ts with the matching crpc.d.ts generated from your registered
+application. The generated file's types are contracts, not automatic function
+registration or file transport. Invoke `new GoRpcClient({socketPath})`, forward
+credentials in call options.headers, and handle RpcError/close the client when
+done. See ../docs/node-ipc.md for the compiling usage example.
 
-### A. Next.js Server Action (`app/actions/user.ts`)
+Attached Go middleware always runs; applications implement authentication and authorization there. Legacy skipMiddlewares/context
+options remain for compatibility and are ignored by the Go bridge; they do not
+skip verification or inject a trusted session. Namespace application state in
+Go middleware with ctx.Set, then read it in handlers. Metadata IsPublic is ignored.
 
-```typescript
-"use server";
-
-import { goRpc } from "@/lib/go-rpc";
-import { auth } from "@/auth"; // Your NextAuth / Clerk session
-
-export async function getUserProfile(userId: string) {
-  const session = await auth();
-  if (!session?.user) {
-    throw new Error("Unauthorized");
-  }
-
-  // Next.js already authenticated the user.
-  // We skip redundant Go token verification and inject the session into context!
-  const profile = await goRpc.call(
-    "user.getProfile",
-    { id: userId },
-    {
-      skipMiddlewares: true,
-      context: {
-        auth: { // Namespaced under Go middleware name "auth"
-          user: session.user,
-        },
-      },
-    }
-  );
-
-  return profile;
-}
-```
-
-### B. Standard Service Call with Headers (Running Go Middlewares)
-
-```typescript
-import { goRpc } from "./client.js";
-
-const result = await goRpc.call(
-  "user.getProfile",
-  { id: "usr_101" },
-  {
-    headers: {
-      authorization: "Bearer eyJhbGciOi...",
-    },
-  }
-);
-```
-
-### C. Error Handling
-
-```typescript
-import { goRpc, RpcError } from "./client.js";
-
-try {
-  await goRpc.call("user.create", { email: "invalid", name: "" });
-} catch (err) {
-  if (err instanceof RpcError) {
-    console.error(`RPC Error [${err.code}]:`, err.message, err.details);
-  }
-}
-```
-
----
-
-### Connection failures
-
-The client rejects pending calls with `RpcError.code === "network_error"` when
-the socket closes, fails, or is explicitly closed with `client.close()`. An
-anonymous error response (empty/missing request ID) fails the current connection
-and all its pending calls: the error cannot safely be assigned to one RPC call.
-The connection and request timers are cleared as calls settle.
-
-A later call opens a fresh connection automatically. Failed calls are **never
-replayed**: the server may already have executed a request before the connection
-failed. Concurrent callers share one connection attempt, bounded to three seconds.
-The existing per-call timeout (`timeoutMs`, default 5,000 ms) starts after connection
-setup. Correlated RPC errors and response data retain their existing behavior.
-A nonblank response line containing invalid JSON (including an incomplete JSON
-response flushed at EOF) fails all pending calls with `network_error` and retires
-the connection. Partial lines remain buffered until a newline or EOF; ordinary
-per-call timeouts still apply while waiting. Syntactically valid non-envelope
-JSON retains its existing handling; this is not additional envelope validation.
-
----
-
-## 🛠️ Regenerating Types on Schema Changes
-
-Whenever you add or modify a Go function in `functions/`:
-
-```bash
-cd example-mongo
-go run ./cmd/codegen ../example-node/crpc.d.ts
-```
-
-TypeScript will immediately highlight any breaking parameter changes in your Node.js/Next.js codebase!
+Connection errors reject pending calls promptly. A later call can reconnect,
+but no failed request is replayed automatically. Do not add blind retries for
+non-idempotent operations. Unix frame limits and protocol differences are described
+in the IPC guide; no universal latency guarantee is made.

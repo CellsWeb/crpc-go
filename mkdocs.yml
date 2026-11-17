@@ -70,3 +70,4 @@ nav:
       - Go API Reference: api-reference.md
       - Benchmarks & Comparison: benchmarks.md
       - Deployment & Autoscaling: deployment.md
+      - Release & Migration: migration.md

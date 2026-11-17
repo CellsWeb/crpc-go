@@ -5,16 +5,9 @@ import type { RpcContractMap } from "../crpc.d.ts";
 
 export interface CallOptions {
   headers?: Record<string, string>;
+  /** @deprecated Ignored by the Go bridge; authentication middleware always runs. */
   skipMiddlewares?: boolean;
-  /**
-   * Dependency injection context passed directly to Go's ctx.
-   * MUST be namespaced by middleware name, e.g.:
-   * context: {
-   *   auth: {
-   *     user: { id: "usr_1", email: "user@example.com", role: "admin" }
-   *   }
-   * }
-   */
+  /** @deprecated Ignored by the Go bridge; caller data cannot establish trusted context. */
   context?: Record<string, Record<string, unknown>>;
   timeoutMs?: number;
 }

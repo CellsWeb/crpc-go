@@ -1,151 +1,57 @@
----
-layout: default
-title: Middlewares & Context Lifecycle
-nav_order: 5
----
+# Middleware and authentication
 
-# Middlewares & Context Lifecycle
+Go middleware receives `(*rpc.Context, headers, options)` and returns an error
+to stop processing. It runs before input validation and the handler. Store
+verified application state under a middleware-specific context key.
 
-Middlewares in CellsWeb RPC Go intercept incoming requests before function business handlers run. They perform authentication, role verification, rate limiting, logging, and dependency injection.
-
----
-
-## 🔑 Crucial Architectural Rule: Context Namespacing
-
-Every middleware that produces output data **MUST namespace its output under its own registered middleware name**:
-
-```go
-ctx.Set("auth", AuthOutput{
-    User: authenticatedUser,
-})
-```
-
-Inside any downstream function or middleware:
-
-```go
-authVal, ok := ctx.Get("auth")
-// or typed:
-authData, ok := rpc.GetContext[AuthOutput](ctx, "auth")
-```
-
-### Why Namespacing Matters
-When invoking Go RPC functions from **Node.js** or **Next.js Server Actions** via IPC with `skipMiddlewares: true`, Node passes:
-
-```json
-{
-  "skipMiddlewares": true,
-  "context": {
-    "auth": {
-      "user": { "id": "usr_101", "role": "admin" }
-    }
-  }
-}
-```
-
-Go automatically unpacks this into `ctx.Set("auth", ...)`. Consequently, your Go functions run **identically** whether the context was established by the Go HTTP middleware or injected by a Node.js session!
-
----
-
-## 📁 Middleware Directory Structure
-
-Middlewares live in `middlewares/{name}/`:
-
-```text
-middlewares/auth/
-├── constants.go # Options & Headers schemas
-└── run.go       # Middleware handler & init() registration
-```
-
----
-
-## 1. Defining Middleware Schemas (`constants.go`)
-
-`constants.go` defines:
-- **Options Schema**: Configurable per function attachment.
-- **Headers Schema**: The HTTP headers inspected by this middleware.
-
-```go
-package auth
-
-import "github.com/CellsWeb/crpc-go/pkg/schema"
-
-type Options struct {
-	Roles    []string `json:"roles,omitempty"`
-	Optional bool     `json:"optional,omitempty"`
-}
-
-var OptionsSchema = schema.Object(map[string]*schema.SchemaRule{
-	"roles":    schema.Optional(schema.Array(schema.String())).Describe("Allowed roles"),
-	"optional": schema.Optional(schema.Boolean()).Describe("Allow unauthenticated calls"),
-})
-
-var HeadersSchema = schema.Object(map[string]*schema.SchemaRule{
-	"authorization": schema.Optional(schema.String()).Describe("Bearer JWT token"),
-	"x-api-key":     schema.Optional(schema.String()).Describe("Alternative API Key"),
-})
-```
-
----
-
-## 2. Implementing Middleware Logic (`run.go`)
-
+<!-- compile-go: middlewares/auth/run.go -->
 ```go
 package auth
 
 import (
-	"strings"
-	"github.com/CellsWeb/crpc-go/pkg/rpc"
+    "strings"
+    "github.com/CellsWeb/crpc-go/pkg/rpc"
+    "github.com/CellsWeb/crpc-go/pkg/schema"
 )
-
-type UserSession struct {
-	ID    string `json:"id"`
-	Email string `json:"email"`
-	Role  string `json:"role"`
+type Session struct { UserID, Role string }
+// Application integration point; this example denies until it is implemented.
+var VerifyToken = func(_ string) (Session, error) {
+    return Session{}, rpc.NewError(rpc.ErrUnauthorized, "Configure credential verification")
 }
-
-func init() {
-	rpc.RegisterMiddleware(
-		"auth",
-		"Validates bearer tokens and injects authenticated user into context",
-		Run,
-		OptionsSchema,
-		HeadersSchema,
-	)
-}
-
 func Run(ctx *rpc.Context, headers map[string]string, options map[string]any) error {
-	token := headers["authorization"]
-
-	if token == "" {
-		// Check if function configured optional authentication
-		if opt, ok := options["optional"].(bool); ok && opt {
-			return nil
-		}
-		return rpc.NewError(rpc.ErrUnauthorized, "Missing Authorization header")
-	}
-
-	cleanToken := strings.TrimPrefix(token, "Bearer ")
-	if cleanToken != "secret_token_123" {
-		return rpc.NewError(rpc.ErrUnauthorized, "Invalid or expired token")
-	}
-
-	// 🔒 Store validated user strictly under middleware name "auth"
-	ctx.Set("auth", map[string]any{
-		"user": UserSession{
-			ID:    "usr_42",
-			Email: "alex@cellsweb.com",
-			Role:  "admin",
-		},
-	})
-
-	return nil
+    raw := headers["authorization"]
+    if !strings.HasPrefix(raw, "Bearer ") { return rpc.NewError(rpc.ErrUnauthorized, "Bearer credentials required") }
+    session, err := VerifyToken(strings.TrimPrefix(raw, "Bearer "))
+    if err != nil { return err }
+    if session.UserID == "" { return rpc.NewError(rpc.ErrUnauthorized, "Invalid credentials") }
+    role, _ := options["role"].(string)
+    if role != "" && session.Role != role { return rpc.NewError(rpc.ErrForbidden, "Insufficient role") }
+    ctx.Set("auth", session)
+    return nil
+}
+func init() {
+    rpc.RegisterMiddleware("auth", "Verify a bearer session and role", Run,
+        schema.Object(map[string]*schema.SchemaRule{"role": schema.Optional(schema.String())}),
+        schema.Object(map[string]*schema.SchemaRule{"authorization": schema.String().Describe("Bearer credentials")}),
+    )
 }
 ```
 
----
+These option/header schemas are native documentation metadata. Go does not gain
+automatic middleware option/header validation from them; the application must
+validate its configuration and credentials. Node's middleware schema checks are
+different implementation semantics, while auth responsibility is shared.
 
-## 🛡️ Fail-Closed Security
+Consume state with `rpc.GetContext[auth.Session](ctx,"auth")` after the matching
+middleware establishes it. Middleware namespacing organizes server-owned state;
+it is not a mechanism for accepting identity from caller JSON.
 
-CellsWeb RPC implements **fail-closed** security:
-- If a function specifies `rpc.M("missingMiddleware", ...)`, the server **aborts immediately** with `internal_error`. It will **never** silently execute an unauthenticated or unprotected handler.
-- Middleware errors immediately abort the request and return standardized error envelopes (HTTP 200).
+There is no supported remote middleware-skip/context-injection authentication
+workflow. Legacy Node IPC CallOptions fields named skipMiddlewares/context are
+retained/transmitted for compatibility, but the Go bridge ignores them and always
+uses the middleware pipeline. Forward credentials through headers instead.
+
+Generated middleware is an editable no-op stub, not production authentication.
+Docs show structural options/header schemas, descriptions and required status;
+they do not read live configured options/defaults. IsPublic is deprecated and
+ignored; it cannot grant or deny execution.
