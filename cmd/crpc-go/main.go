@@ -11,7 +11,7 @@ import (
 	"github.com/CellsWeb/crpc-go/cmd/crpc-go/commands"
 )
 
-const version = "1.0.0"
+const version = "1.0.1"
 
 func main() {
 	if len(os.Args) < 2 {
