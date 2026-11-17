@@ -124,18 +124,20 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 		}
 	}
 
-	// Prepare raw input map
-	var rawMap map[string]any
+	// Preserve JSON shapes and native values in non-nil maps, as in CallInMemory.
+	var rawData any
 	if input != nil {
 		switch v := input.(type) {
 		case map[string]any:
-			rawMap = v
+			if v != nil {
+				rawData = v
+			}
 		default:
 			bytes, err := json.Marshal(input)
 			if err != nil {
 				return nil, err
 			}
-			if err := json.Unmarshal(bytes, &rawMap); err != nil {
+			if err := json.Unmarshal(bytes, &rawData); err != nil {
 				return nil, err
 			}
 		}
@@ -143,7 +145,7 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 
 	// Validate input schema if present
 	if fn.InputSchema != nil {
-		validationErrors := schema.Validate(fn.InputSchema, rawMap, "")
+		validationErrors := schema.Validate(fn.InputSchema, rawData, "")
 		if len(validationErrors) > 0 {
 			return &ResponseEnvelope{
 				Status:  "error",
@@ -159,7 +161,7 @@ func (tc *TestCaller) CallRaw(functionKey string, input any, customOpts ...TestO
 	}
 
 	// Execute handler
-	result, err := fn.Handler(ctx, rawMap)
+	result, err := fn.Handler(ctx, rawData)
 	duration := float64(time.Since(start).Microseconds()) / 1000.0
 
 	if err != nil {
