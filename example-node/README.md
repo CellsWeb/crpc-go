@@ -147,6 +147,24 @@ try {
 
 ---
 
+### Connection failures
+
+The client rejects pending calls with `RpcError.code === "network_error"` when
+the socket closes, fails, or is explicitly closed with `client.close()`. An
+anonymous error response (empty/missing request ID) fails the current connection
+and all its pending calls: the error cannot safely be assigned to one RPC call.
+The connection and request timers are cleared as calls settle.
+
+A later call opens a fresh connection automatically. Failed calls are **never
+replayed**: the server may already have executed a request before the connection
+failed. Concurrent callers share one connection attempt, bounded to three seconds.
+The existing per-call timeout (`timeoutMs`, default 5,000 ms) starts after connection
+setup. Correlated RPC errors and response data retain their existing behavior;
+malformed response JSON is logged/ignored while waiting for a valid response or
+the configured timeout.
+
+---
+
 ## 🛠️ Regenerating Types on Schema Changes
 
 Whenever you add or modify a Go function in `functions/`:

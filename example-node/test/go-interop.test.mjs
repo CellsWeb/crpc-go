@@ -29,7 +29,7 @@ async function daemonAt(t, socketPath) {
   process.stdout.on('data', chunk => { stdout += chunk; });
   process.stderr.on('data', chunk => { stderr += chunk; });
   const exited = new Promise(resolve => {
-    process.once('exit', resolve);
+    process.once('close', resolve); // Wait for stdout/stderr to drain as well.
     process.once('error', error => { stderr += String(error); resolve(); });
   });
   async function stop(signal = 'SIGTERM') {
@@ -112,9 +112,10 @@ test('actual Go daemon termination rejects concurrent callers and reconnects aft
   await f.daemon.stop('SIGKILL');
   networkErrors(await bounded(Promise.all(calls)), /closed|socket/i);
   timers.assertEmpty();
-  await daemonAt(t, f.socketPath);
+  const restarted = await daemonAt(t, f.socketPath);
   assert.deepEqual(await f.client.call('system.ping', { message: 'restarted' }, options), { message: 'restarted' });
   timers.assertEmpty();
+  await restarted.stop();
 });
 
 test('Go protocol evidence: malformed JSON is anonymous/recoverable; newline and length frames remain compatible', async t => {

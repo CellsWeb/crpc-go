@@ -45,7 +45,8 @@ export class GoRpcClient {
   private socketPath: string;
   private socket: net.Socket | null = null;
   private pending = new Map<string, PendingRequest>();
-  private isConnecting = false;
+  private connecting: Promise<net.Socket> | null = null;
+  private disconnect: ((error: Error) => void) | null = null;
   private rl: readline.Interface | null = null;
 
   constructor(config: GoRpcClientConfig = {}) {
@@ -53,57 +54,84 @@ export class GoRpcClient {
   }
 
   private connect(): Promise<net.Socket> {
+    if (this.connecting) return this.connecting;
     if (this.socket && !this.socket.destroyed) {
       return Promise.resolve(this.socket);
     }
-
-    if (this.isConnecting) {
-      return new Promise((resolve, reject) => {
-        const interval = setInterval(() => {
-          if (this.socket && !this.socket.destroyed) {
-            clearInterval(interval);
-            resolve(this.socket);
-          }
-        }, 10);
-        setTimeout(() => {
-          clearInterval(interval);
-          reject(new Error("Socket connection timeout"));
-        }, 3000);
-      });
+    // destroy() marks a socket synchronously, but close arrives later. Retire
+    // that generation before a new socket can take ownership of pending calls.
+    if (this.socket) {
+      this.disconnect?.(new RpcError("network_error", "IPC socket closed before response was received"));
     }
 
-    this.isConnecting = true;
-
-    return new Promise((resolve, reject) => {
-      const sock = net.createConnection({ path: this.socketPath }, () => {
-        this.socket = sock;
-        this.isConnecting = false;
-
-        this.rl = readline.createInterface({
-          input: sock,
-          crlfDelay: Infinity,
-        });
-
-        this.rl.on("line", (line) => {
-          this.handleResponseLine(line);
-        });
-
-        resolve(sock);
-      });
-
-      sock.on("error", (err) => {
-        this.isConnecting = false;
-        reject(new Error(`Failed to connect to Go RPC socket at ${this.socketPath}: ${err.message}`));
-      });
-
-      sock.on("close", () => {
-        this.socket = null;
-        if (this.rl) {
-          this.rl.close();
+    const sock = net.createConnection({ path: this.socketPath });
+    this.socket = sock;
+    this.connecting = new Promise((resolve, reject) => {
+      let finished = false;
+      let connected = false;
+      let reader: readline.Interface | null = null;
+      const timer = setTimeout(() => {
+        disconnect(new RpcError("network_error", "Socket connection timeout"));
+      }, 3000);
+      const onLine = (line: string) => {
+        if (!finished && this.socket === sock) this.handleResponseLine(line);
+      };
+      const disconnect = (error: Error) => {
+        if (finished) return;
+        finished = true;
+        clearTimeout(timer);
+        sock.off("connect", onConnect);
+        reader?.off("line", onLine);
+        reader?.close();
+        if (this.socket === sock) {
+          this.socket = null;
           this.rl = null;
+          this.connecting = null;
+          this.disconnect = null;
+          for (const id of this.pending.keys()) this.settleRequest(id, error);
         }
-      });
+        reject(error); // Also releases callers still awaiting connection setup.
+        sock.destroy();
+      };
+      const onError = (error: Error) => {
+        disconnect(new RpcError("network_error", connected
+          ? `IPC socket error: ${error.message}`
+          : `Failed to connect to Go RPC socket at ${this.socketPath}: ${error.message}`));
+      };
+      const onClose = () => {
+        disconnect(new RpcError("network_error", "IPC socket closed before response was received"));
+        sock.off("error", onError);
+        sock.off("close", onClose);
+        reader?.off("error", onError);
+      };
+      const onConnect = () => {
+        if (finished) return;
+        connected = true;
+        clearTimeout(timer);
+        this.connecting = null;
+        reader = readline.createInterface({ input: sock, crlfDelay: Infinity });
+        this.rl = reader;
+        reader.on("line", onLine);
+        // Keep this until socket close: a socket error can also be forwarded
+        // by readline during the same event dispatch, even after teardown.
+        reader.on("error", onError);
+        resolve(sock);
+      };
+      this.disconnect = disconnect;
+      sock.once("connect", onConnect);
+      sock.on("error", onError);
+      sock.on("close", onClose);
     });
+    return this.connecting;
+  }
+
+  private settleRequest(id: string, error?: Error, data?: unknown) {
+    const pending = this.pending.get(id);
+    if (!pending) return;
+    this.pending.delete(id);
+    clearTimeout(pending.timer);
+    if (error) pending.reject(error);
+    else pending.resolve(data);
   }
 
   private handleResponseLine(line: string) {
@@ -111,17 +139,20 @@ export class GoRpcClient {
 
     try {
       const resp = JSON.parse(line);
+      if (!resp || typeof resp !== "object" || Array.isArray(resp)) return;
       const reqId = resp.id;
-      const pending = this.pending.get(reqId);
-      if (!pending) return;
-
-      this.pending.delete(reqId);
-      clearTimeout(pending.timer);
+      if ((reqId === "" || reqId == null) && resp.status === "error") {
+        // The server could not identify the failed frame. No arbitrary pending
+        // request can be blamed; abandon this connection without replaying it.
+        this.disconnect?.(new RpcError("network_error", `IPC connection error: ${resp.error || "anonymous server error"}`, resp.details));
+        return;
+      }
+      if (typeof reqId !== "string") return;
 
       if (resp.status === "ok") {
-        pending.resolve(resp.data);
+        this.settleRequest(reqId, undefined, resp.data);
       } else {
-        pending.reject(new RpcError(resp.code || "rpc_error", resp.error || "RPC call failed", resp.details));
+        this.settleRequest(reqId, new RpcError(resp.code || "rpc_error", resp.error || "RPC call failed", resp.details));
       }
     } catch (err: any) {
       console.error("[crpc-ipc] Failed to parse response line:", err);
@@ -148,34 +179,31 @@ export class GoRpcClient {
       skipMiddlewares: options.skipMiddlewares,
       context: options.context,
     };
+    // Encoding can throw (e.g. circular data). Do it before registering a timer.
+    const wire = JSON.stringify(payload) + "\n";
+    if (this.socket !== sock || sock.destroyed) {
+      throw new RpcError("network_error", "IPC socket closed before response was received");
+    }
 
     return new Promise((resolve, reject) => {
       const timer = setTimeout(() => {
-        this.pending.delete(id);
-        reject(new RpcError("timeout", `RPC call ${String(functionName)} timed out after ${timeoutMs}ms`));
+        this.settleRequest(id, new RpcError("timeout", `RPC call ${String(functionName)} timed out after ${timeoutMs}ms`));
       }, timeoutMs);
 
       this.pending.set(id, { resolve, reject, timer });
 
-      sock.write(JSON.stringify(payload) + "\n", (err) => {
-        if (err) {
-          clearTimeout(timer);
-          this.pending.delete(id);
-          reject(new RpcError("network_error", `Socket write failed: ${err.message}`));
-        }
-      });
+      try {
+        sock.write(wire, (err) => {
+          if (err) this.settleRequest(id, new RpcError("network_error", `Socket write failed: ${err.message}`));
+        });
+      } catch (err: any) {
+        this.settleRequest(id, new RpcError("network_error", `Socket write failed: ${err.message}`));
+      }
     });
   }
 
   public close() {
-    if (this.socket) {
-      this.socket.destroy();
-      this.socket = null;
-    }
-    if (this.rl) {
-      this.rl.close();
-      this.rl = null;
-    }
+    this.disconnect?.(new RpcError("network_error", "IPC socket closed before response was received"));
   }
 }
 
