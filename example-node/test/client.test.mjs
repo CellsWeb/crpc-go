@@ -200,15 +200,13 @@ test('connection deadline rejects shared waiters and cleans its timer', async t 
   timers.assertEmpty();
 });
 
-test('malformed response lines are ignored without consuming pending ID; valid following response succeeds', async t => {
+test('syntactically valid non-envelope JSON and unknown IDs retain existing ignored behavior', async t => {
   const timers = trackTimers(t);
-  const errors = t.mock.method(console, 'error', () => {});
   const f = await fixture(t, (socket, request) => {
-    socket.write('{bad-json}\nnull\n[]\n' + JSON.stringify({ id: 'unknown', status: 'error', error: 'unmatched' }) + '\n');
+    socket.write('null\n[]\ntrue\n42\n"text"\n{}\n{"id":3,"status":"ok"}\n' + JSON.stringify({ id: 'unknown', status: 'error', error: 'unmatched' }) + '\n');
     reply(socket, request, 'valid');
   });
   assert.equal(await bounded(f.client.call('system.ping', {}, options)), 'valid');
-  assert.ok(errors.mock.callCount() >= 1);
   assert.equal(f.client.pending.size, 0);
   timers.assertEmpty();
 });

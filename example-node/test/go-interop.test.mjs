@@ -147,3 +147,58 @@ test('Go protocol evidence: malformed JSON is anonymous/recoverable; newline and
   assert.match(error.error, /exceeds limit/);
   await bounded(once(socket, 'close'));
 });
+
+for (const corruption of ['invalid-json-line', 'truncated-eof']) {
+  test(`actual Go response through fault-injecting proxy: ${corruption} fails callers and reconnects without replay`, async t => {
+    const timers = trackTimers(t);
+    t.mock.method(console, 'error', () => {});
+    const f = await live(t);
+    const proxyPath = path.join(path.dirname(f.socketPath), 'proxy.sock');
+    const peers = new Set(), requests = [], responses = [];
+    let generation = 0;
+    const proxy = net.createServer(downstream => {
+      const current = ++generation;
+      const upstream = net.createConnection(f.socketPath);
+      const input = readline.createInterface({ input: downstream });
+      const output = readline.createInterface({ input: upstream });
+      peers.add(downstream); peers.add(upstream);
+      for (const socket of [downstream, upstream]) socket.on('error', () => {});
+      input.on('line', line => requests.push({ generation: current, request: JSON.parse(line) }));
+      downstream.pipe(upstream);
+      let corrupted = false;
+      output.on('line', line => {
+        const response = JSON.parse(line); // Actual unchanged Go bridge must emit valid JSON.
+        responses.push(response);
+        if (current === 1) {
+          if (corrupted) return;
+          corrupted = true;
+          if (corruption === 'truncated-eof') downstream.end(line.slice(0, -1));
+          else downstream.write('{corrupted-response}\n' + line + '\n');
+        } else downstream.write(line + '\n');
+      });
+      downstream.once('close', () => { input.close(); output.close(); upstream.destroy(); });
+      upstream.once('close', () => { output.close(); downstream.end(); });
+    });
+    await new Promise((resolve, reject) => { proxy.once('error', reject); proxy.listen(proxyPath, resolve); });
+    const client = new GoRpcClient({ socketPath: proxyPath });
+    t.after(async () => {
+      cleanupClient(client);
+      for (const peer of peers) peer.destroy();
+      await new Promise(resolve => proxy.close(resolve));
+    });
+    const calls = Array.from({ length: 3 }, (_, index) => outcome(client.call('system.ping', { index }, options)));
+    networkErrors(await bounded(Promise.all(calls)), /IPC stream corruption.*unparsable response/i);
+    assert.equal(client.pending.size, 0);
+    assert.equal(client.socket, null);
+    assert.equal(client.rl, null);
+    timers.assertEmpty();
+    assert.equal(responses[0].status, 'ok');
+    assert.deepEqual(responses[0].data, { index: 0 });
+    assert.deepEqual(await bounded(client.call('public.hello', { name: 'After corruption' }, options)), { greeting: 'Hello, After corruption!' });
+    await until(() => requests.length === 4);
+    assert.deepEqual(requests.map(item => item.generation), [1, 1, 1, 2]);
+    assert.equal(new Set(requests.map(item => item.request.id)).size, 4);
+    assert.equal(client.pending.size, 0);
+    timers.assertEmpty();
+  });
+}
