@@ -18,7 +18,7 @@ before(() => {
   binary = path.join(binaryDir, 'daemon');
   const args = ['build', '-o', binary];
   if (process.env.CRPC_IPC_TEST_RACE === '1') args.push('-race');
-  args.push('./example-node/test/fixtures');
+  args.push('./example-node/test/testdata');
   execFileSync('go', args, { cwd: repo, env: { ...process.env, GOWORK: 'off' }, stdio: 'pipe' });
 });
 after(() => { if (binaryDir) fs.rmSync(binaryDir, { recursive: true, force: true }); });

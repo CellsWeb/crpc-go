@@ -1,4 +1,4 @@
-// Test daemon: exercise the unchanged production Unix IPC bridge without MongoDB.
+// Test-only daemon: exercise the unchanged production Unix IPC bridge without MongoDB.
 package main
 
 import (
