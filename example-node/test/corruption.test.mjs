@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import net from 'node:net';
+import { Duplex } from 'node:stream';
 import { test } from 'node:test';
 import { GoRpcClient } from '../dist/src/client.js';
 import { bounded, cleanupClient, fixture, networkErrors, options, outcome, reply, trackTimers, until } from './helpers.mjs';
@@ -90,7 +91,9 @@ test('partial valid response is buffered until completed; whitespace and CRLF re
 test('mocked socket: invalid JSON retires connection and removes readline/socket listeners', async t => {
   const timers = trackTimers(t);
   t.mock.method(console, 'error', () => {});
-  const socket = new net.Socket();
+  // A connected socket stand-in: an unconnected net.Socket adds its own
+  // internal connect listener when readline resumes it, unlike a real peer.
+  const socket = new Duplex({ read() {}, write(_chunk, _encoding, callback) { callback(); } });
   t.mock.method(net, 'createConnection', () => socket);
   const write = t.mock.method(socket, 'write', () => true);
   const client = new GoRpcClient();

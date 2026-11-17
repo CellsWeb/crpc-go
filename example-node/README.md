@@ -159,9 +159,12 @@ A later call opens a fresh connection automatically. Failed calls are **never
 replayed**: the server may already have executed a request before the connection
 failed. Concurrent callers share one connection attempt, bounded to three seconds.
 The existing per-call timeout (`timeoutMs`, default 5,000 ms) starts after connection
-setup. Correlated RPC errors and response data retain their existing behavior;
-malformed response JSON is logged/ignored while waiting for a valid response or
-the configured timeout.
+setup. Correlated RPC errors and response data retain their existing behavior.
+A nonblank response line containing invalid JSON (including an incomplete JSON
+response flushed at EOF) fails all pending calls with `network_error` and retires
+the connection. Partial lines remain buffered until a newline or EOF; ordinary
+per-call timeouts still apply while waiting. Syntactically valid non-envelope
+JSON retains its existing handling; this is not additional envelope validation.
 
 ---
 

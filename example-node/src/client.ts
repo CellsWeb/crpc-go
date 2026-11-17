@@ -155,7 +155,7 @@ export class GoRpcClient {
         this.settleRequest(reqId, new RpcError(resp.code || "rpc_error", resp.error || "RPC call failed", resp.details));
       }
     } catch (err: any) {
-      console.error("[crpc-ipc] Failed to parse response line:", err);
+      this.disconnect?.(new RpcError("network_error", `IPC stream corruption: unparsable response line: ${err.message}`));
     }
   }
 
