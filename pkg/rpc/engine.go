@@ -256,8 +256,11 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 	var payload struct {
 		Namespace    string `json:"namespace"`
 		FunctionName string `json:"functionName"`
-		Data         any    `json:"data"`
+		Data         *any   `json:"data"`
 	}
+	// Leave a pointer to a nil interface for an omitted data member. JSON null
+	// clears the pointer; other JSON values decode into the interface in one pass.
+	payload.Data = new(any)
 
 	if err := json.Unmarshal(bodyBytes, &payload); err != nil {
 		app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrInvalidBody, fmt.Sprintf("Malformed JSON body: %v", err), nil, start)
@@ -277,8 +280,12 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 		return
 	}
 
-	if payload.Data == nil {
-		payload.Data = make(map[string]any)
+	var data any
+	if payload.Data != nil {
+		data = *payload.Data
+		if data == nil {
+			data = make(map[string]any)
+		}
 	}
 
 	functionKey := FormatFunctionKey(payload.Namespace, payload.FunctionName)
@@ -307,7 +314,7 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 
 	// Validate input schema
 	if fn.InputSchema != nil {
-		validationErrors := schema.Validate(fn.InputSchema, payload.Data, "")
+		validationErrors := schema.Validate(fn.InputSchema, data, "")
 		if len(validationErrors) > 0 {
 			app.sendErrorResponse(reqCtx, ctx.RequestID(), ErrValidation, fmt.Sprintf("Input validation failed: %d field error(s)", len(validationErrors)), validationErrors, start)
 			return
@@ -315,7 +322,7 @@ func (app *CoreRPC) handleJsonRPC(reqCtx *fasthttp.RequestCtx, ctx *Context, sta
 	}
 
 	// Execute business handler
-	result, err := fn.Handler(ctx, payload.Data)
+	result, err := fn.Handler(ctx, data)
 	if err != nil {
 		app.dispatchError(reqCtx, ctx.RequestID(), err, start)
 		return

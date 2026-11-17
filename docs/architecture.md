@@ -43,6 +43,13 @@ There is zero regex evaluation, zero path splitting, and zero dynamic URL parame
 
 ## 📦 Uniform HTTP 200 Protocol
 
+HTTP JSON requests distinguish an omitted `data` member from explicit JSON
+`"data": null`. Omission retains the default empty object (`{}`); explicit null
+reaches input validation and the handler as nil. A schema must allow null for the
+handler to run. Arrays and scalar values are preserved in the same way. This
+matches Node's HTTP intake and Go's in-memory/Unix IPC null handling; schemas
+still use each runtime's existing validation rules.
+
 CellsWeb RPC enforces a strict protocol: **every business, validation, or authentication failure returns an HTTP 200 Status Code with a standardized error envelope**.
 
 ### Success Response
