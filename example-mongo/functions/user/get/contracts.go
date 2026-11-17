@@ -14,7 +14,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Retrieves user profile by ID or email address",
-	IsPublic:    true,
 	Tags:        []string{"user", "profile"},
 }
 

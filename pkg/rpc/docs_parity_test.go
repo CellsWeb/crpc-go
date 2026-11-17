@@ -1,9 +1,10 @@
 package rpc
 
 import (
-	"github.com/CellsWeb/crpc-go/pkg/schema"
 	"strings"
 	"testing"
+
+	"github.com/CellsWeb/crpc-go/pkg/schema"
 )
 
 func TestDocsCleanupAndMiddlewareParity(t *testing.T) {
@@ -71,5 +72,11 @@ func TestDocsCleanupAndMiddlewareParity(t *testing.T) {
 	}
 	if !functions["catalog.legacyTrue"].Metadata.IsPublic {
 		t.Error("compatibility metadata mutated")
+	}
+	copy := *functions["catalog.legacyFalse"]
+	copy.ContentType = "multipart/form-data"
+	multipart := renderFunctionDocs("/reference/api", "/rpc", "http://localhost", &copy, mws, functions)
+	if !strings.Contains(multipart, "YOUR_AUTHORIZATION") || strings.Contains(multipart, "YOUR_X_TRACE") {
+		t.Error("multipart cURL header placeholders incorrect")
 	}
 }

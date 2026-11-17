@@ -163,7 +163,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Handler for %s.%s",
-	IsPublic:    true,
 	Tags:        []string{%q, "upload"},
 }
 
@@ -191,7 +190,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Handler for %s.%s",
-	IsPublic:    true,
 	Tags:        []string{%q},
 }
 

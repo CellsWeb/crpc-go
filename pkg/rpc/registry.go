@@ -48,12 +48,14 @@ type RegisteredMiddleware struct {
 	Handler  MiddlewareFn
 }
 
-// FunctionMetadata contains descriptive documentation and operational flags for the /docs UI
+// FunctionMetadata contains documentation and legacy compatibility fields.
 type FunctionMetadata struct {
-	Description string   `json:"description,omitempty"`
-	IsPublic    bool     `json:"isPublic,omitempty"`
-	Deprecated  bool     `json:"deprecated,omitempty"`
-	Tags        []string `json:"tags,omitempty"`
+	Description string `json:"description,omitempty"`
+	// Deprecated: Ignored. Has no documentation visibility, authentication or
+	// authorization meaning. Retained for source compatibility until a future major release.
+	IsPublic   bool     `json:"isPublic,omitempty"`
+	Deprecated bool     `json:"deprecated,omitempty"`
+	Tags       []string `json:"tags,omitempty"`
 }
 
 // FunctionDefinition holds metadata, schemas, and execution handlers

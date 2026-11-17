@@ -109,7 +109,7 @@ func TestDocsRendererComplete(t *testing.T) {
 		if !strings.Contains(body, `Properties &amp; Controls:`) && !strings.Contains(body, `Properties & Controls:`) {
 			t.Errorf("missing properties & controls in middleware card")
 		}
-		if !strings.Contains(body, `Required Headers:`) {
+		if !strings.Contains(body, `HTTP Headers:`) {
 			t.Errorf("missing required headers in middleware card")
 		}
 
@@ -138,8 +138,8 @@ func TestDocsRendererComplete(t *testing.T) {
 		if !strings.Contains(body, `Creates user profile with address and tags`) {
 			t.Errorf("missing function description")
 		}
-		if !strings.Contains(body, `PUBLIC`) {
-			t.Errorf("missing PUBLIC badge")
+		if strings.Contains(body, `>PUBLIC</span>`) || strings.Contains(body, `>PRIVATE</span>`) {
+			t.Errorf("legacy metadata badge rendered")
 		}
 
 		// Check Middleware Pipeline & Applied Controls
@@ -147,8 +147,8 @@ func TestDocsRendererComplete(t *testing.T) {
 			!strings.Contains(body, `Middleware Pipeline & Applied Controls (1)`) {
 			t.Errorf("missing middleware pipeline section")
 		}
-		if !strings.Contains(body, `roles:`) || !strings.Contains(body, `admin`) {
-			t.Errorf("missing configured options for middleware auth")
+		if !strings.Contains(body, `roles`) || !strings.Contains(body, `string[]`) {
+			t.Errorf("missing option schema for middleware auth")
 		}
 
 		// Check Aggregated Required Headers Table
@@ -216,7 +216,7 @@ func TestDocsRendererComplete(t *testing.T) {
 		if !strings.Contains(body, `Options JSON Schema`) {
 			t.Errorf("missing options json schema section")
 		}
-		if !strings.Contains(body, `Required Headers JSON Schema`) {
+		if !strings.Contains(body, `Headers JSON Schema`) {
 			t.Errorf("missing headers json schema section")
 		}
 	})

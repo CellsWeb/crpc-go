@@ -242,7 +242,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Retrieves user profile information by unique identifier",
-	IsPublic:    true,
 	Tags:        []string{"user", "profile"},
 }
 
@@ -325,7 +324,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Uploads and updates a user profile avatar image",
-	IsPublic:    true,
 	Tags:        []string{"user", "upload"},
 }
 
@@ -971,3 +969,15 @@ For full scripts and reproduction instructions, see [benchmarks/README.md](./ben
 ## 📄 License
 
 MIT © [CellsWeb](https://cellsweb.com)
+
+
+### Deprecated documentation metadata
+
+`rpc.FunctionMetadata.IsPublic` is deprecated and ignored. The existing `bool`
+field and JSON tag remain for source compatibility until a future major release.
+It has no documentation visibility or authentication/authorization meaning.
+PUBLIC/PRIVATE badges are removed; new generators omit this field. Middleware
+handles access control, and `rpc.Config.DocsEnabled` controls docs globally.
+Middleware documentation shows schema structure, descriptions and required/optional
+fields, never configured values or schema defaults. See
+[Interactive Documentation](docs/interactive-docs.md).

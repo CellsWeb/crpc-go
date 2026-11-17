@@ -330,3 +330,13 @@ Handles high-performance inter-process communication (IPC) with Node.js and Next
 | `ServeUnixSocket` | `(app *CoreRPC, socketPath string) error` | Runs a Unix Domain Socket IPC server for local process calling. |
 | `ServeStdio` | `(app *CoreRPC) error` | Runs a JSON-lines Stdio IPC stream for child-process orchestration. |
 | `GenerateTypeScriptDeclarations` | `(functions map[string]*FunctionDefinition) string` | Generates a strictly typed `crpc.d.ts` declaration file. |
+
+
+### Deprecated metadata compatibility
+
+`rpc.FunctionMetadata.IsPublic` is retained as a deprecated compatibility `bool`
+with its existing JSON tag. It is ignored and has no documentation visibility,
+authentication or authorization meaning. Omitted/false/true have the same framework
+behavior. New templates omit it; removal is reserved for a future major release.
+Use middleware for access control and the global documentation configuration for
+`/docs` availability. See [Interactive Documentation](interactive-docs.md).

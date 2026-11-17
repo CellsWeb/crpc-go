@@ -43,7 +43,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Retrieves complete user profile and preferences",
-	IsPublic:    false,
 	Tags:        []string{"user", "profile"},
 }
 
@@ -211,3 +210,13 @@ func Run(ctx *rpc.Context, input Input) (*Output, error) {
 ```
 
 > **Automatic Temporary File Cleanup**: The framework tracks uploaded files inside `ctx`. When the HTTP response finishes, any unsaved temporary files are automatically purged from disk.
+
+
+### Deprecated metadata compatibility
+
+`rpc.FunctionMetadata.IsPublic` is retained as a deprecated compatibility `bool`
+with its existing JSON tag. It is ignored and has no documentation visibility,
+authentication or authorization meaning. Omitted/false/true have the same framework
+behavior. New templates omit it; removal is reserved for a future major release.
+Use middleware for access control and the global documentation configuration for
+`/docs` availability. See [Interactive Documentation](interactive-docs.md).

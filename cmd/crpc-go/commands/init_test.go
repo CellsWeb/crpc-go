@@ -155,13 +155,14 @@ func TestGeneratedServerDocsEnvironment(t *testing.T) {
 						}
 					}
 				} else if suffix == "/user/getProfile" {
-					for _, marker := range []string{">PRIVATE</span>", "Target resource identifier", "Handler for user.getProfile"} {
+					for _, marker := range []string{"Target resource identifier", "Handler for user.getProfile"} {
 						if !strings.Contains(body, marker) {
 							t.Errorf("enabled false-badge function docs missing %q", marker)
 						}
 					}
-				} else if suffix == "" && !strings.Contains(body, ">PUBLIC</span>") {
-					t.Error("enabled docs lost true-badge function")
+				}
+				if tc.enabled && (strings.Contains(body, ">PUBLIC</span>") || strings.Contains(body, ">PRIVATE</span>")) {
+					t.Error("legacy badge still rendered")
 				}
 			}
 			if endpoint != "/docs" || !tc.enabled {
@@ -233,7 +234,7 @@ func buildGeneratedDocsServer(t *testing.T) (string, string) {
 	}
 	writeFixture(t, filepath.Join(project, "go.sum"), string(sum))
 	// Developer-customizable test fixtures: exercise real middleware enforcement
-	// and a false badge while retaining generated main, typed handler and schema.
+	// and ignored compatibility metadata while retaining generated main, typed handler and schema.
 	writeFixture(t, filepath.Join(project, "middlewares/auth/zz_crpc010_fixture.go"), `package auth
 import "github.com/CellsWeb/crpc-go/pkg/rpc"
 func init() {
@@ -248,7 +249,7 @@ func init() {
 	if err != nil {
 		t.Fatal(err)
 	}
-	writeFixture(t, contractsPath, strings.Replace(string(contracts), "IsPublic:    true", "IsPublic:    false", 1))
+	writeFixture(t, contractsPath, strings.Replace(string(contracts), "var Metadata = rpc.FunctionMetadata{", "var Metadata = rpc.FunctionMetadata{\nIsPublic: false,", 1))
 	build := func(args ...string) {
 		t.Helper()
 		cmd := exec.Command("go", args...)

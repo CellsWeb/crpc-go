@@ -123,8 +123,8 @@ for example `/internal/docs`; an unset or blank value defaults to `/docs`.
 The executable uses the final exported values. A sourced file replaces earlier
 shell assignments; exports after sourcing replace the file's values. A `.env`
 file that has not been exported has no effect. Existing programmatic
-`rpc.Config.DocsEnabled` / `DocsPath` behavior is unchanged, and `IsPublic` remains
-a documentation badge only.
+`rpc.Config.DocsEnabled` / `DocsPath` behavior is unchanged. The legacy `IsPublic`
+field is deprecated and ignored; it controls neither documentation nor authorization.
 
 Start the development server with live reload:
 

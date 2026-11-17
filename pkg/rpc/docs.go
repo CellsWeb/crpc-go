@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"html"
+	"slices"
 	"sort"
 	"strings"
 
@@ -579,147 +580,49 @@ func render2ColumnSchemaSection(sectionTitle string, rule *schema.SchemaRule, co
 	)
 }
 
-func renderMiddlewareCardContent(
-	mwName string,
-	rawDescription string,
-	optsConfigured map[string]any,
-	centralMw *RegisteredMiddleware,
-	isGlobalView bool,
-	docsEndpoint string,
-) string {
+// middlewareSchemaForDocs copies documentation schemas, leaving live schemas
+// and their defaults intact for application code. Configured values are never read.
+func middlewareSchemaForDocs(rule *schema.SchemaRule) *schema.SchemaRule {
+	if rule == nil {
+		return nil
+	}
+	copy := *rule
+	copy.Default = nil
+	copy.Required = append([]string(nil), rule.Required...)
+	sort.Strings(copy.Required)
+	if rule.Properties != nil {
+		copy.Properties = make(map[string]*schema.SchemaRule, len(rule.Properties))
+		for name, child := range rule.Properties {
+			copy.Properties[name] = middlewareSchemaForDocs(child)
+		}
+	}
+	copy.Items = middlewareSchemaForDocs(rule.Items)
+	return &copy
+}
+
+func renderMiddlewareCardContent(mwName, rawDescription string, centralMw *RegisteredMiddleware, docsEndpoint string) string {
 	normDocs := normalizeDocsEndpoint(docsEndpoint)
-
-	// 1. Properties & Controls List
-	var propsListHtml string
-	if centralMw != nil && centralMw.Metadata.Options != nil && len(centralMw.Metadata.Options.Properties) > 0 {
-		optProps := centralMw.Metadata.Options.Properties
-		propKeys := make([]string, 0, len(optProps))
-		for k := range optProps {
-			propKeys = append(propKeys, k)
+	optionsHTML := `<div style="color:var(--muted);font-size:12.5px">No option schema provided. Configured values are not displayed.</div>`
+	headersHTML := `<div style="color:var(--muted);font-size:12.5px">No header schema provided.</div>`
+	if centralMw != nil {
+		if centralMw.Metadata.Options != nil {
+			optionsHTML = renderSchemaFieldsList(middlewareSchemaForDocs(centralMw.Metadata.Options), 0)
 		}
-		sort.Strings(propKeys)
-
-		var items strings.Builder
-		for _, key := range propKeys {
-			pSchema := optProps[key]
-			desc := pSchema.Description
-
-			var defaultValStr, configuredValStr string
-			if pSchema.Default != nil {
-				b, _ := json.Marshal(pSchema.Default)
-				defaultValStr = string(b)
-			}
-			if optsConfigured != nil {
-				if val, exists := optsConfigured[key]; exists {
-					b, _ := json.Marshal(val)
-					configuredValStr = string(b)
-				}
-			}
-
-			displayVal := configuredValStr
-			isDefaultTag := false
-			if displayVal == "" {
-				if defaultValStr != "" {
-					displayVal = defaultValStr
-					isDefaultTag = isGlobalView
-				} else {
-					displayVal = "-"
-				}
-			}
-
-			tagHtml := ""
-			if isDefaultTag {
-				tagHtml = ` <span style="font-size:10px;color:var(--muted)">(default)</span>`
-			}
-			descHtml := ""
-			if desc != "" {
-				descHtml = fmt.Sprintf(` <span class="mw-prop-desc">— %s</span>`, html.EscapeString(desc))
-			}
-
-			items.WriteString(fmt.Sprintf(`
-        <li class="mw-list-item">
-          <span class="mw-list-bullet">•</span>
-          <span class="mw-prop-key">%s:</span>
-          <span class="mw-prop-val">%s%s</span>
-          %s
-        </li>`,
-				html.EscapeString(key),
-				html.EscapeString(displayVal),
-				tagHtml,
-				descHtml,
-			))
+		if centralMw.Metadata.Headers != nil {
+			headersHTML = renderSchemaFieldsList(middlewareSchemaForDocs(centralMw.Metadata.Headers), 0)
 		}
-		propsListHtml = fmt.Sprintf(`<ul class="mw-list">%s</ul>`, items.String())
-	} else if len(optsConfigured) > 0 {
-		keys := make([]string, 0, len(optsConfigured))
-		for k := range optsConfigured {
-			keys = append(keys, k)
-		}
-		sort.Strings(keys)
-		var items strings.Builder
-		for _, k := range keys {
-			b, _ := json.Marshal(optsConfigured[k])
-			items.WriteString(fmt.Sprintf(`
-        <li class="mw-list-item">
-          <span class="mw-list-bullet">•</span>
-          <span class="mw-prop-key">%s:</span>
-          <span class="mw-prop-val">%s</span>
-        </li>`, html.EscapeString(k), html.EscapeString(string(b))))
-		}
-		propsListHtml = fmt.Sprintf(`<ul class="mw-list">%s</ul>`, items.String())
-	} else {
-		propsListHtml = `<div style="color:var(--muted);font-size:12.5px;margin-top:4px">• None (No configurable options)</div>`
 	}
-
-	// 2. Required Headers List
-	var headersListHtml string
-	if centralMw != nil && centralMw.Metadata.Headers != nil && len(centralMw.Metadata.Headers.Properties) > 0 {
-		headerProps := centralMw.Metadata.Headers.Properties
-		headerKeys := make([]string, 0, len(headerProps))
-		for k := range headerProps {
-			headerKeys = append(headerKeys, k)
-		}
-		sort.Strings(headerKeys)
-
-		var items strings.Builder
-		for _, key := range headerKeys {
-			hSchema := headerProps[key]
-			desc := hSchema.Description
-			if desc == "" {
-				desc = "HTTP Header value"
-			}
-			items.WriteString(fmt.Sprintf(`
-        <li class="mw-list-item">
-          <span class="mw-list-bullet">•</span>
-          <span class="mw-prop-key">%s</span>
-          <span class="mw-prop-desc">— %s</span>
-        </li>`, html.EscapeString(key), html.EscapeString(desc)))
-		}
-		headersListHtml = fmt.Sprintf(`<ul class="mw-list">%s</ul>`, items.String())
-	} else {
-		headersListHtml = `<div style="color:var(--muted);font-size:12.5px;margin-top:4px">• None (No headers required)</div>`
-	}
-
 	return fmt.Sprintf(`
     <div class="mw-card">
       <div class="mw-header">
         <a href="%s/middlewares/%s" style="text-decoration:none"><div class="mw-name">⚡ %s</div></a>
       </div>
       <div class="mw-desc">%s</div>
-      
       <div class="mw-sub-title">Properties & Controls:</div>
       %s
-
-      <div class="mw-sub-title">Required Headers:</div>
+      <div class="mw-sub-title">HTTP Headers:</div>
       %s
-    </div>`,
-		normDocs,
-		html.EscapeString(mwName),
-		html.EscapeString(mwName),
-		html.EscapeString(rawDescription),
-		propsListHtml,
-		headersListHtml,
-	)
+    </div>`, normDocs, html.EscapeString(mwName), html.EscapeString(mwName), html.EscapeString(rawDescription), optionsHTML, headersHTML)
 }
 
 func generateSampleData(rule *schema.SchemaRule) any {
@@ -843,10 +746,6 @@ func renderDocsIndex(
 				mwSubtitle = "Middlewares: " + strings.Join(mwNames, ", ")
 			}
 
-			publicBadge := `<span class="badge badge-gray">PRIVATE</span>`
-			if fn.Metadata.IsPublic {
-				publicBadge = `<span class="badge badge-green">PUBLIC</span>`
-			}
 			depBadge := ""
 			if fn.Metadata.Deprecated {
 				depBadge = `<span class="badge badge-yellow">DEPRECATED</span>`
@@ -865,7 +764,6 @@ func renderDocsIndex(
             %s
             <div class="fn-card-meta">
               %s
-              %s
               <span class="badge badge-purple">%s</span>
               <span class="badge badge-gray">%s</span>
               %s
@@ -879,7 +777,6 @@ func renderDocsIndex(
 				html.EscapeString(ns),
 				html.EscapeString(fn.FunctionName),
 				descHtml,
-				publicBadge,
 				depBadge,
 				html.EscapeString(fn.ContentType),
 				html.EscapeString(mwSubtitle),
@@ -912,7 +809,7 @@ func renderDocsIndex(
 			if rawDesc == "" {
 				rawDesc = fmt.Sprintf("Custom %s middleware", mw.Metadata.Name)
 			}
-			body.WriteString(renderMiddlewareCardContent(mw.Metadata.Name, rawDesc, nil, mw, true, normDocs))
+			body.WriteString(renderMiddlewareCardContent(mw.Metadata.Name, rawDesc, mw, normDocs))
 		}
 		body.WriteString(`</div></div>`)
 	}
@@ -1075,10 +972,10 @@ func renderMiddlewareDoc(
     <div class="section">
       <div class="section-title">Middleware Specification</div>
       %s
-    </div>`, renderMiddlewareCardContent(mw.Metadata.Name, rawDesc, nil, mw, true, normDocs)))
+    </div>`, renderMiddlewareCardContent(mw.Metadata.Name, rawDesc, mw, normDocs)))
 
 	if mw.Metadata.Options != nil {
-		optsJson, _ := schema.ToJSONString(mw.Metadata.Options)
+		optsJson, _ := schema.ToJSONString(middlewareSchemaForDocs(mw.Metadata.Options))
 		body.WriteString(fmt.Sprintf(`
       <div class="section">
         <div class="section-title">Options JSON Schema</div>
@@ -1087,10 +984,10 @@ func renderMiddlewareDoc(
 	}
 
 	if mw.Metadata.Headers != nil {
-		headersJson, _ := schema.ToJSONString(mw.Metadata.Headers)
+		headersJson, _ := schema.ToJSONString(middlewareSchemaForDocs(mw.Metadata.Headers))
 		body.WriteString(fmt.Sprintf(`
       <div class="section">
-        <div class="section-title">Required Headers JSON Schema</div>
+        <div class="section-title">Headers JSON Schema</div>
         %s
       </div>`, codeBlock(headersJson)))
 	}
@@ -1147,21 +1044,26 @@ func renderFunctionDocs(
 
 	for _, mwItem := range fn.Middlewares {
 		centralMw := allMws[mwItem.Name]
-		rawDesc := "Custom middleware"
+		rawDesc := fmt.Sprintf("Custom %s middleware", mwItem.Name)
 		if centralMw != nil && centralMw.Metadata.Description != "" {
 			rawDesc = centralMw.Metadata.Description
 		}
-		middlewareCards = append(middlewareCards, renderMiddlewareCardContent(mwItem.Name, rawDesc, mwItem.Options, centralMw, false, normDocs))
+		middlewareCards = append(middlewareCards, renderMiddlewareCardContent(mwItem.Name, rawDesc, centralMw, normDocs))
 
 		if centralMw != nil && centralMw.Metadata.Headers != nil && len(centralMw.Metadata.Headers.Properties) > 0 {
 			for hKey, hRule := range centralMw.Metadata.Headers.Properties {
+				if hRule == nil || !isPropertyRequired(centralMw.Metadata.Headers, hKey, hRule) {
+					continue
+				}
 				keyLower := strings.ToLower(hKey)
 				info, exists := requiredHeadersMap[keyLower]
 				if !exists {
 					info = &headerReqInfo{}
 					requiredHeadersMap[keyLower] = info
 				}
-				info.requiredBy = append(info.requiredBy, mwItem.Name)
+				if !slices.Contains(info.requiredBy, mwItem.Name) {
+					info.requiredBy = append(info.requiredBy, mwItem.Name)
+				}
 				if hRule.Description != "" {
 					info.description = hRule.Description
 				}
@@ -1174,6 +1076,14 @@ func renderFunctionDocs(
 	if fn.ContentType == "multipart/form-data" {
 		var curlLines []string
 		curlLines = append(curlLines, fmt.Sprintf(`curl -X POST "%s" \`, fullRpcUrl))
+		headerKeys := make([]string, 0, len(requiredHeadersMap))
+		for key := range requiredHeadersMap {
+			headerKeys = append(headerKeys, key)
+		}
+		sort.Strings(headerKeys)
+		for _, key := range headerKeys {
+			curlLines = append(curlLines, fmt.Sprintf(`  -H "%s: <YOUR_%s>" \`, key, strings.ToUpper(strings.ReplaceAll(key, "-", "_"))))
+		}
 		curlLines = append(curlLines, fmt.Sprintf(`  -F "namespace=%s" \`, fn.Namespace))
 		curlLines = append(curlLines, fmt.Sprintf(`  -F "functionName=%s" \`, fn.FunctionName))
 
@@ -1231,10 +1141,6 @@ func renderFunctionDocs(
 		body.WriteString(fmt.Sprintf(`<div class="page-sub">%s</div>`, html.EscapeString(fn.Metadata.Description)))
 	}
 
-	publicBadge := `<span class="badge badge-gray">PRIVATE</span>`
-	if fn.Metadata.IsPublic {
-		publicBadge = `<span class="badge badge-green">PUBLIC</span>`
-	}
 	depBadge := ""
 	if fn.Metadata.Deprecated {
 		depBadge = `<span class="badge badge-yellow">DEPRECATED</span>`
@@ -1243,12 +1149,10 @@ func renderFunctionDocs(
 	body.WriteString(fmt.Sprintf(`
       <div class="info-row" style="margin-top:14px">
         %s
-        %s
         <span class="badge badge-purple">%s</span>
         %s
       </div>
     </div>`,
-		publicBadge,
 		depBadge,
 		html.EscapeString(fn.ContentType),
 		tagsHtml,

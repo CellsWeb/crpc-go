@@ -14,7 +14,6 @@ const (
 
 var Metadata = rpc.FunctionMetadata{
 	Description: "Uploads and updates a user's avatar image via multipart form",
-	IsPublic:    true,
 	Tags:        []string{"user", "avatar", "upload"},
 }
 

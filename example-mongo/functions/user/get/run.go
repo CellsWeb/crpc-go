@@ -19,7 +19,6 @@ func init() {
 		ContentType:  "application/json",
 		Metadata: rpc.FunctionMetadata{
 			Description: "Retrieves user profile by ID or email address",
-			IsPublic:    true,
 			Tags:        []string{"user", "profile"},
 		},
 		Middlewares: Middlewares,
