@@ -4,7 +4,27 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"runtime/debug"
+	"strings"
 )
+
+// Source builds have no published module version. Use a real released fallback;
+// an explicit Go workspace can select an unreleased SDK checkout for development.
+const releasedSDKVersion = "v1.0.0"
+
+func scaffoldSDKVersion(info *debug.BuildInfo) string {
+	if info == nil || info.Main.Path != "github.com/CellsWeb/crpc-go" || info.Main.Version == "" || info.Main.Version == "(devel)" || info.Main.Replace != nil {
+		return releasedSDKVersion
+	}
+	// Go can derive a version from a local Git commit that was never published.
+	// Only a versioned module installation may supply the SDK dependency version.
+	for _, setting := range info.Settings {
+		if setting.Key == "vcs" || strings.HasPrefix(setting.Key, "vcs.") {
+			return releasedSDKVersion
+		}
+	}
+	return info.Main.Version
+}
 
 // InitProject scaffolds a complete, production-ready CellsWeb RPC Go project
 func InitProject(targetDir string) error {
@@ -14,17 +34,14 @@ func InitProject(targetDir string) error {
 	}
 
 	// 1. go.mod
+	buildInfo, _ := debug.ReadBuildInfo()
+	sdkVersion := scaffoldSDKVersion(buildInfo)
 	goMod := fmt.Sprintf(`module %s
 
-go 1.22
+go 1.27.4
 
-require (
-	github.com/CellsWeb/crpc-go v0.0.0
-	github.com/valyala/fasthttp v1.55.0
-)
-
-replace github.com/CellsWeb/crpc-go => ../
-`, projectName)
+require github.com/CellsWeb/crpc-go %s
+`, projectName, sdkVersion)
 	_ = os.WriteFile(filepath.Join(targetDir, "go.mod"), []byte(goMod), 0644)
 
 	// 2. .env.example & .env
@@ -458,6 +475,7 @@ func main() {
 	_ = os.WriteFile(filepath.Join(targetDir, "cmd", "server", "main.go"), []byte(mainGo), 0644)
 
 	fmt.Printf("\n🎉 Project %s created successfully!\n", projectName)
-	fmt.Printf("Next steps:\n  cd %s\n  crpc-go dev\n", projectName)
+	fmt.Printf("SDK dependency: github.com/CellsWeb/crpc-go@%s\n", sdkVersion)
+	fmt.Printf("Next steps:\n  cd %s\n  go mod tidy\n  crpc-go dev\n", projectName)
 	return nil
 }

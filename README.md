@@ -93,6 +93,7 @@ go install github.com/CellsWeb/crpc-go/cmd/crpc-go@latest
 # Initialize a new production-ready project
 crpc-go init my-service
 cd my-service
+go mod tidy
 
 # Create a standard JSON RPC Function
 crpc-go create:function --ns user --name getProfile

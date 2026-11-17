@@ -12,7 +12,7 @@ This guide walks you through installing CellsWeb RPC Go, scaffolding a new proje
 
 ## 🛠️ Prerequisites
 
-- **Go**: Version `1.22` or higher ([Download Go](https://go.dev/dl/))
+- **Go**: Version `1.27.4` or higher ([Download Go](https://go.dev/dl/))
 - **Operating System**: Linux, macOS, or Windows
 - **Git**
 
@@ -41,7 +41,35 @@ Use `crpc-go` to bootstrap a complete project with pre-configured directory layo
 ```bash
 crpc-go init my-rpc-api
 cd my-rpc-api
+go mod tidy
+go build ./...
 ```
+
+### SDK dependency and unreleased development
+
+Generated applications require `github.com/CellsWeb/crpc-go` as an ordinary
+versioned module. They do not contain a local `replace` directive or require a
+parent/sibling SDK checkout. A CLI installed with `go install ...@<version>`
+uses that installed module version for the generated SDK requirement.
+
+An unpublished source build cannot assume its Git commit is remotely available.
+It uses the existing published `v1.0.0` fallback, which `init` prints explicitly.
+This older release does **not** contain unreleased hardening fixes. No future tag
+is assumed or created. To test a candidate CLI and SDK checkout together, opt in
+to a local Go workspace after generating the application:
+
+```bash
+cd /path/to/my-rpc-api
+go work init . /absolute/path/to/rpc-go
+go build ./...
+go run ./cmd/server
+```
+
+Keep this machine-specific workspace local. `GOWORK=off go build ./...` uses the
+application's declared released dependency instead. Once the reviewed SDK and
+CLI are published together, install that exact CLI version and generate against
+the matching SDK version; no workspace is needed. The generated Go directive
+matches the current SDK minimum, `1.27.4`.
 
 > **Adding to an Existing Project**:
 > If adding to an existing Go project that already has a `go.mod`, install the library inside your project folder:
