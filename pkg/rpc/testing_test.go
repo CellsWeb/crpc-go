@@ -220,7 +220,8 @@ func TestCallRawValidationAuthorizationAndOptions(t *testing.T) {
 		rule       *schema.SchemaRule
 	}{
 		{"wrong_array_shape", "/", "item", schema.Array(schema.String())},
-		{"wrong_array_element", "/0", []int{1}, schema.Array(schema.String())},
+		// Preserve the validator's existing root-array detail path format.
+		{"wrong_array_element", "//0", []int{1}, schema.Array(schema.String())},
 		{"required_null", "/", nil, schema.Array(schema.String())},
 		{"fractional_integer", "/", 1.5, schema.Integer()},
 		{"boolean_string_not_coerced", "/", "false", schema.Boolean()},
