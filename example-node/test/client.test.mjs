@@ -157,6 +157,22 @@ test('concurrent connection failures reject together and a later attempt can con
   timers.assertEmpty();
 });
 
+test('a destroyed socket awaiting its close event cannot strand old pending calls during reconnect', async t => {
+  const timers = trackTimers(t);
+  const f = await fixture(t);
+  const oldCall = outcome(f.client.call('system.ping', {}, options));
+  await until(() => f.requests.length === 1);
+  f.client.socket.destroy(); // destroyed is synchronous; close is a later event.
+  const nextCall = outcome(f.client.call('system.ping', {}, options));
+  await until(() => f.requests.length === 2);
+  reply(f.requests[1].socket, f.requests[1].request, 'new-generation');
+  const [old, next] = await bounded(Promise.all([oldCall, nextCall]));
+  networkErrors([old], /closed/i);
+  assert.equal(next.value, 'new-generation');
+  assert.equal(f.client.pending.size, 0);
+  timers.assertEmpty();
+});
+
 test('close before connect completes rejects every waiter and removes connect listeners', async t => {
   const timers = trackTimers(t);
   const socket = new net.Socket();

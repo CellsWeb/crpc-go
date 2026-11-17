@@ -67,7 +67,9 @@ test('actual Go bridge: concurrent arbitrary JSON values, normal errors and auth
   const f = await live(t);
   const values = [{ object: 1 }, [[1, 2], [null, true]], 'string', 1.25, true, false, null];
   const calls = values.map(value => f.client.call('system.ping', value, options));
-  assert.deepEqual(await bounded(Promise.all(calls)), values);
+  // Go's existing BridgeResponse data,omitempty omits a nil result. Preserve
+  // that legacy undefined result; an explicitly present data:null stays null.
+  assert.deepEqual(await bounded(Promise.all(calls)), [...values.slice(0, -1), undefined]);
   assert.deepEqual(await f.client.call('public.hello', { name: 'Node' }, options), { greeting: 'Hello, Node!' });
   const denied = await outcome(f.client.call('user.getProfile', { id: 'fixture' }, options));
   assert.equal(denied.error.code, 'rpc_error'); // Existing Go bridge has no code field.
