@@ -76,7 +76,7 @@ error code/details, HTTP status, resource bounds and cleanup. Important gates:
 
 ```sh
 go test -count=1 ./pkg/rpc -run TestHTTPJSONPayloadShapes
-go test -count=1 ./pkg/rpc -run TestCallerCallRaw
+go test -count=1 ./pkg/rpc -run TestCallRaw
 go test -count=1 ./pkg/nodebridge
 CRPC_STANDALONE_INTEGRATION=1 go test -count=1 ./...
 CRPC_STANDALONE_INTEGRATION=1 CRPC_SCAFFOLD_RACE=1 go test -race -count=1 ./...

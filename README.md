@@ -61,3 +61,12 @@ go vet ./...
 The Node example has a separate npm build/typecheck/IPC suite. The coordinated
 release plan lives in the sibling Node repository's RELEASE.md. No zero-memory,
 universal latency or security certification is implied by benchmark fixtures.
+
+## Contribute
+
+Read [CONTRIBUTING.md](CONTRIBUTING.md) for setup, focused changes and review.
+The [development guide](docs/development.md) and
+[source map](docs/internals/index.md) explain internals and subsystem tests.
+Please follow [the Code of Conduct](CODE_OF_CONDUCT.md); report vulnerabilities
+through [the private reporting policy](SECURITY.md). Licensed under
+[MIT](LICENSE).

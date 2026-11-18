@@ -14,3 +14,10 @@ runtime; Bun is tested independently in the Node framework.
 
 IsPublic is deprecated and ignored. All authentication/authorization is enforced
 by application middleware, not documentation metadata or caller-injected context.
+
+## For contributors
+
+Start with [contribution policy](contributing.md), [development setup](development.md)
+and the [internal source map](internals/index.md). The sidebar separates end-user
+usage from implementation, testing and release guides. See the [security policy](security.md)
+and [Code of Conduct](code-of-conduct.md) before opening a report.

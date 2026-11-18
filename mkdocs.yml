@@ -40,6 +40,7 @@ markdown_extensions:
       custom_fences:
         - name: mermaid
           class: mermaid
+          format: !!python/name:pymdownx.superfences.fence_code_format
   - pymdownx.tabbed:
       alternate_style: true
   - pymdownx.highlight:
@@ -47,27 +48,46 @@ markdown_extensions:
       line_spans: __span
       pygments_lang_class: true
   - pymdownx.inlinehilite
-  - pymdownx.snippets
+  - pymdownx.snippets:
+      base_path: ["."]
+      check_paths: true
   - tables
   - attr_list
   - md_in_html
 
 nav:
-  - Overview:
-      - Introduction: index.md
-      - Getting Started: getting-started.md
-      - Architecture & Lifecycle: architecture.md
-  - Core Guides:
-      - Functions & Contracts: functions.md
-      - Data Types & Schemas: schemas.md
-      - Middlewares & Context: middlewares.md
-      - Custom HTTP Routes: custom-routes.md
-  - Fullstack & Tooling:
-      - Node.js & Next.js IPC: node-ipc.md
-      - Integration Testing: testing.md
-      - Interactive Docs UI: interactive-docs.md
-  - Reference & Ops:
-      - Go API Reference: api-reference.md
-      - Benchmarks & Comparison: benchmarks.md
-      - Deployment & Autoscaling: deployment.md
+  - Start:
+      - Overview: index.md
+      - Install & Configure: getting-started.md
       - Release & Migration: migration.md
+  - User Guides:
+      - Functions & Registration: functions.md
+      - Native Schemas: schemas.md
+      - Middleware & Context: middlewares.md
+      - Custom HTTP Routes: custom-routes.md
+      - Node IPC Client: node-ipc.md
+      - In-Memory Testing: testing.md
+      - Interactive API Docs: interactive-docs.md
+      - Deployment: deployment.md
+  - Reference:
+      - Public Go API: api-reference.md
+      - Protocol Overview: architecture.md
+      - Benchmarks & Limits: benchmarks.md
+  - Contributor Guides:
+      - Contributing: contributing.md
+      - Development Setup: development.md
+      - Source Map & Design: internals/index.md
+      - Shared Protocol: internals/protocol.md
+      - Request Lifecycle: internals/lifecycle.md
+      - Registration, Middleware & Context: internals/registration.md
+      - Native Schemas, Call APIs & Errors: internals/validation.md
+      - HTTP, Multipart & Uploads: internals/transports.md
+      - IPC & Client Lifecycle: internals/ipc.md
+      - Embedded Renderer: internals/renderer.md
+      - CLI & Scaffolding: internals/tooling.md
+      - Testing & Safe Extension: internals/testing.md
+      - Release Engineering: internals/releasing.md
+  - Community:
+      - Security Policy: security.md
+      - Code of Conduct: code-of-conduct.md
+      - Node Contributor Docs: https://cellsweb.github.io/crpc-node/internals/
