@@ -2,10 +2,10 @@
 
 ## Public installation
 
-Go>=1.27.4 is required. Module and CLI **v1.0.1** are publicly available:
+Go>=1.27.4 is required. Module and CLI version **v1.0.2** use the same versioned release:
 
 ```sh
-go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1
+go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.2
 crpc-go version
 crpc-go init my-api
 cd my-api
@@ -16,16 +16,16 @@ crpc-go dev
 ```
 
 Put GOBIN, or the default Go bin directory, on PATH. The versioned installed CLI
-selects SDK v1.0.1 automatically. No parent checkout, replace directive or workspace
+selects SDK v1.0.2 automatically. No parent checkout, replace directive or workspace
 is required for generated applications. For an existing module, use
-`go get github.com/CellsWeb/crpc-go@v1.0.1`.
+`go get github.com/CellsWeb/crpc-go@v1.0.2`.
 
 Local/VCS-stamped builds retain the older v1.0.0 fallback because a local Git
 revision may not identify published code. This is independent of the CLI's
 human-readable version. Use `go work init . /absolute/path/to/rpc-go` only for
 intentional local SDK development; keep machine-specific workspaces local.
 `GOWORK=off` selects the declared released dependency. The older v1.0.0 does not
-contain the v1.0.1 hardening fixes; prefer the versioned installed CLI for users.
+contain the v1.0.2 hardening fixes; prefer the versioned installed CLI for users.
 
 ## Generated layout and CLI
 

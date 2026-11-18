@@ -3,13 +3,13 @@
 Native Go RPC functions, schemas, middleware, fasthttp/net-http adapters,
 multipart intake, Unix IPC and server-rendered documentation.
 
-## Install the public release
+## Install the versioned SDK and CLI
 
-**github.com/CellsWeb/crpc-go@v1.0.1** includes the hardening, documentation
+**github.com/CellsWeb/crpc-go@v1.0.2** includes the hardening, documentation
 parity, explicit HTTP null and standalone scaffold fixes. Use Go>=1.27.4:
 
 ```sh
-go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1
+go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.2
 crpc-go version
 crpc-go init my-api
 cd my-api
@@ -20,8 +20,8 @@ crpc-go dev
 ```
 
 Put GOBIN (or `$(go env GOPATH)/bin`) on PATH. The versioned CLI generates a
-public SDK v1.0.1 dependency without a workspace or local replacement. For an
-existing module: `go get github.com/CellsWeb/crpc-go@v1.0.1`.
+matching SDK v1.0.2 dependency without a workspace or local replacement. For an
+existing module: `go get github.com/CellsWeb/crpc-go@v1.0.2`.
 
 Source/VCS-built CLIs still intentionally select the older v1.0.0 SDK fallback;
 use an explicit workspace when testing local SDK changes. The CLI display

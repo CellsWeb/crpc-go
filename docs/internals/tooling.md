@@ -25,11 +25,13 @@ scaffoldSDKVersion reads runtime/debug build information. A proper versioned mod
 installation selects its installed module version. Missing/wrong/replaced/devel or
 VCS-stamped source builds select the real published older v1.0.0 fallback. Never
 replace that with a made-up unpublished version to make a source test appear
-standalone. Public installed v1.0.1 CLI has been tested generating SDK v1.0.1.
+standalone. A CLI installed from the versioned v1.0.2 module selects SDK v1.0.2. Release
+preparation validates this with an isolated candidate proxy; public installation
+must be checked again after the real tag is published.
 
 For local SDK development, create a disposable app and explicitly use go.work to
 select the checkout. Its generated go.mod stays portable without parent-relative
-replace paths. A source-built CLI printing1.0.1 does not prove SDK v1.0.1 selection;
+replace paths. A source-built CLI printing1.0.2 does not prove SDK v1.0.2 selection;
 inspect go.mod and go list -m output. See [development](../development.md).
 
 ## Environment and dev process

@@ -64,7 +64,7 @@ go build ./...
 
 Replace the absolute checkout path. Do not commit machine-specific workspaces.
 Source/VCS-built CLIs intentionally select older SDK v1.0.0 without a workspace;
-the installed public v1.0.1 CLI selects SDK v1.0.1. Check go list -m, not just the
+the versioned v1.0.2 CLI selects SDK v1.0.2. Check go list -m, not just the
 CLI display. Generated Go functions require explicit imports/registration;
 there is no Node-style filesystem discovery or --middlewares CLI flag.
 

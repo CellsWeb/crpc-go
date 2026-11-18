@@ -3,7 +3,7 @@
 Typed native functions and schema contracts behind one RPC endpoint, with
 middleware, multipart handling, Unix IPC and server-rendered documentation.
 
-Version v1.0.1 is publicly released with the hardening fixes; see
+Version v1.0.2 adds bounded 2 MiB stdio framing to the hardening fixes; see
 [installation](getting-started.md). Go >=1.27.4 is required. Node 24 LTS is the primary sibling/client test
 runtime; Bun is tested independently in the Node framework.
 

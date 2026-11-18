@@ -28,7 +28,7 @@ turn cross-compilation or a skipped suite into a runtime claim.
 
 ## Source CLI versus installed CLI
 
-The public installed v1.0.1 CLI generates SDK v1.0.1. A local/VCS-built binary still
+The versioned v1.0.2 CLI generates SDK v1.0.2. A local/VCS-built binary still
 uses its real older v1.0.0 SDK fallback, independent of display version. For local
 SDK development, generate an app with the source binary, then explicitly select
 this checkout with `go work init . /absolute/path/to/crpc-go`. Never commit that

@@ -1,6 +1,6 @@
 # Deployment
 
-Deploy the public **v1.0.1** SDK with dependencies pinned in go.mod/go.sum.
+Deploy the versioned **v1.0.2** SDK with dependencies pinned in go.mod/go.sum.
 Use the matching versioned CLI for scaffolding. See
 [installation](getting-started.md) and retain the deployment checks below.
 

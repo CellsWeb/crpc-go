@@ -1,6 +1,6 @@
 # Release and migration
 
-Version **v1.0.1** is public and includes the hardening/documentation fixes.
+Version **v1.0.2** adds the stdio frame-limit correction to the earlier hardening/documentation fixes.
 The historical v1.0.0 tag predates these changes and remains unchanged. Use
 Go>=1.27.4 and install the exact versioned CLI/module as described in
 [installation](getting-started.md).
@@ -27,6 +27,6 @@ retire the affected connection. Later calls can reconnect without replaying work
 
 Generated servers honor exported DOCS_ENABLED/DOCS_PATH but do not load .env. Keep
 local workspaces out of portable production setup. The Node releases are
-core 1.0.34/client 1.0.24/scaffolder 1.0.30, declare Node>=24.0.0 and preserve
+core 1.0.34/client 1.0.25/scaffolder 1.0.30, declare Node>=24.0.0 and preserve
 Bun support. Its union fix restores strict nullable/file validation; native schema
 vocabularies still differ. Review both changelogs before deployment.

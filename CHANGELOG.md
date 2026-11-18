@@ -1,5 +1,17 @@
 # Changelog
 
+## v1.0.2
+
+- Raise ServeStdio's implicit 64 KiB Scanner ceiling to the existing 2,097,152-byte
+  IPC line limit, counting LF/CRLF delimiters. One bounded lookahead byte preserves
+  exact-limit final EOF lines without accepting oversized frames.
+- Preserve bufio.ErrTooLong, malformed JSON responses, native/Unix framing and
+  parent-owned process lifecycle. No public API, middleware or wire change.
+- CLI reports v1.0.2; installing it from the versioned v1.0.2 module generates an
+  SDK v1.0.2 dependency. Source/VCS builds retain the actual v1.0.0 fallback;
+  use an explicit workspace for local candidate development.
+
+
 ## v1.0.1 — released
 
 Public module and CLI v1.0.1 include the following changes. The historical
@@ -30,7 +42,7 @@ Omit HTTP data or send `{}` when an empty object is intended. Nullable schemas
 must explicitly allow null. Application errors retain HTTP 200 by default;
 standard HTTP mapping remains opt-in.
 
-Keep machine-specific Go workspaces local. Install the publicv1.0.1
+Keep machine-specific Go workspaces local. Install the versioned v1.0.2
 CLI/module version for the hardened standalone dependency.
 Preserve old tags and verify the public module proxy before claiming a successful
 released installation. See the Node repository's release plan for coordinated
