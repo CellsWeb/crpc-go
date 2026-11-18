@@ -27,6 +27,7 @@ retire the affected connection. Later calls can reconnect without replaying work
 
 Generated servers honor exported DOCS_ENABLED/DOCS_PATH but do not load .env. Keep
 local workspaces out of portable production setup. The Node releases are
-core 1.0.34/client 1.0.25/scaffolder 1.0.30, declare Node>=24.0.0 and preserve
+core 1.0.35/client 1.0.26/scaffolder 1.0.31 (documentation-only patches;
+runtime unchanged from core1.0.34/client1.0.25/scaffolder1.0.30), declare Node>=24.0.0 and preserve
 Bun support. Its union fix restores strict nullable/file validation; native schema
 vocabularies still differ. Review both changelogs before deployment.

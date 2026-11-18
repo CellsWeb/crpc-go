@@ -9,6 +9,25 @@
 Native Go RPC functions, schemas, middleware, fasthttp/net-http adapters,
 multipart intake, Unix IPC and server-rendered documentation.
 
+## Framework overview
+
+| Capability | Go implementation |
+|---|---|
+| Registration | Generic typed function registration or explicit FunctionDefinition |
+| Middleware | Ordered handlers with options and context Set/Get; startup-only registration |
+| Schemas | Native schema builders/struct metadata, HTTP input/output checks |
+| HTTP | fasthttp server and net/http adapter, optional custom routes |
+| Uploads | Multipart routing, bounds, temporary-file ownership and typed file injection |
+| IPC | Unix newline/length framing, bounded stdio and maintained Node client |
+| Documentation | Global enable/path controls, function and middleware schema views |
+| Tooling | Go CLI initialization/generators, tests, standalone SDK resolution |
+
+[Node/Bun engine](https://github.com/CellsWeb/crpc-node),
+[HTTP client/React SDK](https://www.npmjs.com/package/@cellsweb/rpc-client) and
+[Go/Node IPC example](example-node/) are distinct integration paths. A browser
+uses HTTP, while a local Node daemon client can use Unix IPC. HTTP File/Blob
+uploads do not become live file objects over JSON IPC.
+
 ## Install the versioned SDK and CLI
 
 **github.com/CellsWeb/crpc-go@v1.0.2** includes the hardening, documentation
@@ -33,6 +52,102 @@ Source/VCS-built CLIs still intentionally select the older v1.0.0 SDK fallback;
 use an explicit workspace when testing local SDK changes. The CLI display
 version alone does not identify its generated dependency. See
 [installation](docs/getting-started.md) and [migration](docs/migration.md).
+
+## Executable typed server
+
+In a fresh Go module, `go get github.com/CellsWeb/crpc-go@v1.0.2`, then save this
+as `main.go`. The example registers before serving and uses explicit CORS/config.
+The documentation decision below is application configuration, not an implicit
+Go core environment parser.
+
+<!-- verify-go: root-go/main.go -->
+```go
+package main
+
+import (
+    "log"
+    "os"
+    "github.com/CellsWeb/crpc-go/pkg/rpc"
+    "github.com/CellsWeb/crpc-go/pkg/schema"
+)
+
+type Input struct { Name string `json:"name"` }
+type Output struct { Greeting string `json:"greeting"` }
+
+func main() {
+    rpc.Register(rpc.FunctionConfig[Input, Output]{
+        Namespace: "public", FunctionName: "hello",
+        Metadata: rpc.FunctionMetadata{Description: "Greet a named caller"},
+        InputSchema: schema.Object(map[string]*schema.SchemaRule{
+            "name": schema.String().Min(1),
+        }),
+        OutputSchema: schema.FromStruct(Output{}),
+        Handler: func(_ *rpc.Context, input Input) (*Output, error) {
+            return &Output{Greeting: "Hello, " + input.Name + "!"}, nil
+        },
+    })
+    app, err := rpc.New(rpc.Config{
+        RpcPath: "/rpc", Host: "127.0.0.1", Port: 4000,
+        CORS: &rpc.CorsConfig{AllowOrigins: []string{"*"}},
+        DocsEnabled: os.Getenv("NODE_ENV") != "production", DocsPath: "/docs",
+    })
+    if err != nil { log.Fatal(err) }
+    app.UseGlobalRegistry()
+    if err := app.ListenAndServe(); err != nil { log.Fatal(err) }
+}
+```
+
+Run `go mod tidy`, `go run .`, then:
+
+```sh
+curl http://localhost:4000/rpc -H 'Content-Type: application/json' \
+  --data '{"namespace":"public","functionName":"hello","data":{"name":"Ada"}}'
+```
+
+Success contains `{"status":"ok","data":{"greeting":"Hello, Ada!"}}`; a numeric
+name produces the existing structured validation error with default HTTP 200.
+Use `schema.Optional`, arrays and native builders for precise nullable/scalar
+contracts; Go is not an implementation of every TypeBox/JSON Schema keyword.
+
+## Middleware and application context
+
+Register middleware through `rpc.RegisterMiddleware` or an instance's
+RegisterMiddleware, then attach it with
+`rpc.DefineMiddlewares(rpc.M("auth", options))` in FunctionConfig.Middlewares.
+A middleware receives `(*rpc.Context, headers, options)` and returns an error to
+stop execution. Verify credentials before calling ctx.Set; handlers can retrieve
+that server-owned state with ctx.Get or rpc.GetContext.
+
+Go middleware options/header schemas are documentation metadata, not automatic
+runtime middleware validation. Validate credentials and configuration in the
+middleware itself. Unlike remote HTTP/IPC input, local test setup is trusted
+application code. There is no supported remote skip/context-injection auth path.
+Register functions, middleware and custom routes before active serving.
+
+## Multipart, documentation and IPC
+
+Use `schema.File()` or file arrays and `*rpc.UploadedFile` fields in typed input.
+Its API uses methods: Filename(), Size(), MimeType(), Bytes(), Reader(),
+TempPath(), SaveTo(path). Persist to a safe application-owned location during
+processing; framework temporary files are cleaned afterward. Files are supported
+at top level/direct arrays. Routing headers must agree with redundant body
+fields; headerless fallback is supported. fasthttp buffers transport intake
+before application multipart processing, so this is not zero network buffering.
+
+Raw `rpc.Config` controls DocsEnabled/DocsPath explicitly. The generated server
+uses exported DOCS_ENABLED (trimmed/case-insensitive true/false/1/0), DOCS_PATH and
+NODE_ENV; omitted visibility defaults on outside production/off in production.
+Invalid nonblank booleans fail startup; generated Go servers do **not** load .env.
+Disabling docs blocks function/middleware/detail routes without unregistering RPCs.
+Metadata schemas/descriptions should never contain application secrets.
+
+For a Node process, use the maintained example-node client and its matching
+contract declarations. Go exposes `nodebridge.ServeUnixSocket` and `ServeStdio`.
+Unix supports JSON-Lines or a four-byte big-endian length prefix; stdio is
+newline-only. The maximum is2,097,152 bytes, counting newline delimiters for line
+frames. Socket-close, anonymous connection errors and malformed response JSON
+reject pending Node calls promptly; later calls can reconnect without replay.
+See [IPC guide](docs/node-ipc.md) for framing and daemon lifecycle details.
 
 ## Contracts
 
