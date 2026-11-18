@@ -42,10 +42,14 @@ new goroutine for every frame on that same connection.
   request JSON yields an anonymous error and can continue at the next frame.
 - Responses are JSON-Lines for both accepted request framing modes.
 
-ServeStdio is different: bufio.Scanner reads newline tokens with the standard
-approximately64KiB maximum, and scanner errors are returned. It does not accept
-Unix length-prefixed frames or automatically inherit the2MiB Unix limit. This
-documentation does not expand that transport or alter the wire.
+ServeStdio uses bufio.Scanner with the same **2,097,152-byte** line-frame limit,
+including LF or CRLF delimiters. One bounded lookahead byte distinguishes an
+exact-limit final EOF line from overflow; it does not increase the frame limit.
+Scanner retains its existing blank-line/CRLF handling and accepts a final line
+without a newline at EOF, unlike Unix framing. Oversized input returns
+bufio.ErrTooLong and stops serving without a response envelope; the parent owns
+process shutdown. Malformed JSON within the limit returns an anonymous error and
+can continue at the next line. Stdio does not accept Unix length-prefixed frames.
 
 ## Client connection generations and pending requests
 

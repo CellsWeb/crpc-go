@@ -34,6 +34,16 @@ type BridgeResponse struct {
 // ServeStdio starts a JSON-line stdio server for parent Node.js child processes
 func ServeStdio(app *rpc.CoreRPC) error {
 	scanner := bufio.NewScanner(os.Stdin)
+	// Keep ScanLines' CRLF and final-EOF behavior, but count framing bytes too.
+	// One lookahead byte distinguishes an exact-limit EOF line from overflow.
+	scanner.Buffer(nil, MaxIPCFrameSize+1)
+	scanner.Split(func(data []byte, atEOF bool) (int, []byte, error) {
+		advance, token, err := bufio.ScanLines(data, atEOF)
+		if advance > MaxIPCFrameSize || (advance == 0 && len(data) > MaxIPCFrameSize) {
+			return 0, nil, bufio.ErrTooLong
+		}
+		return advance, token, err
+	})
 	writer := bufio.NewWriter(os.Stdout)
 
 	for scanner.Scan() {
@@ -74,7 +84,8 @@ func ServeStdio(app *rpc.CoreRPC) error {
 	return scanner.Err()
 }
 
-// MaxIPCFrameSize limits single frames over IPC to 2 MB to prevent memory exhaustion
+// MaxIPCFrameSize limits IPC frames to 2 MiB. Line delimiters count toward the
+// limit; the Unix length prefix is separate from its payload limit.
 const MaxIPCFrameSize = 2 * 1024 * 1024
 
 var errIPCFrameTooLarge = fmt.Errorf("Frame size exceeds limit of %d bytes", MaxIPCFrameSize)

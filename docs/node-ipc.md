@@ -52,7 +52,10 @@ objects just because a generated HTTP-oriented type mentions them.
 
 Unix requests support newline JSON or four-byte big-endian length framing. The
 maximum is 2,097,152 bytes; newline counts for line frames, prefix is separate for
-length frames. This Unix limit is not a promise about the separate stdio scanner.
+length frames. ServeStdio is newline-only with the same line-frame maximum,
+including LF/CRLF, and retains acceptance of a final line at EOF. It returns
+bufio.ErrTooLong on oversized input; the Unix connection error/deadline behavior
+described below is separate from stdio's parent-owned process lifecycle.
 Socket files use 0600 permissions; select an application-owned directory/path.
 
 The Node client uses JSON-Lines responses. Socket closure, anonymous connection
