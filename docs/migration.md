@@ -1,14 +1,14 @@
-# Candidate release and migration
+# Release and migration
 
-This branch prepares v1.0.1. Public v1.0.0 predates the verified hardening and docs
-changes. Do not move that tag or describe it as this candidate. Go >=1.27.4 is
-required. Source display version 1.0.1 is not proof of a published module.
+Version **v1.0.1** is public and includes the hardening/documentation fixes.
+The historical v1.0.0 tag predates these changes and remains unchanged. Use
+Go>=1.27.4 and install the exact versioned CLI/module as described in
+[installation](getting-started.md).
 
 Installed versioned CLIs generate matching SDK requirements. Source/VCS builds
-keep the existing older v1.0.0 fallback because a local revision may not be public.
-Select this candidate with an explicit Go workspace. Once v1.0.1 is actually
-published, verify a fresh GOWORK=off installation/build against that exact version.
-See [installation](getting-started.md) and the sibling Node RELEASE.md plan.
+still use the older v1.0.0 fallback; a display version is not a dependency pin.
+Use an explicit workspace only to select a local SDK checkout deliberately.
+Preserve the migration considerations below when updating an existing app.
 
 Explicit HTTP data:null reaches schema validation/handlers as nil; omission still
 defaults to {}. Arrays/scalars stay intact. CallInMemory/CallRaw/Unix IPC accept
@@ -26,7 +26,7 @@ and malformed response JSON reject pending callers promptly, clean resources and
 retire the affected connection. Later calls can reconnect without replaying work.
 
 Generated servers honor exported DOCS_ENABLED/DOCS_PATH but do not load .env. Keep
-local workspaces out of portable production setup. The Node candidate separately
-prepares core 1.0.34/client 1.0.24/scaffolder 1.0.30, declares Node >=24.0.0 and preserves
+local workspaces out of portable production setup. The Node releases are
+core 1.0.34/client 1.0.24/scaffolder 1.0.30, declare Node>=24.0.0 and preserve
 Bun support. Its union fix restores strict nullable/file validation; native schema
 vocabularies still differ. Review both changelogs before deployment.

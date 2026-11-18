@@ -1,43 +1,31 @@
 # Getting started
 
-## Release status
+## Public installation
 
-Go >=1.27.4 is required. This branch prepares **v1.0.1**. The current public tag
-v1.0.0 is an older SDK without the verified hardening and docs fixes. A source
-binary printing 1.0.1 does not prove that module version is public.
-
-For the unpublished candidate, build the CLI from this checkout:
-
-```sh
-go build -o /tmp/crpc-go-candidate ./cmd/crpc-go
-/tmp/crpc-go-candidate init /tmp/my-crpc-app
-cd /tmp/my-crpc-app
-go work init . /absolute/path/to/rpc-go
-go build ./...
-go run ./cmd/server
-```
-
-Replace the absolute checkout path and keep this machine-specific workspace
-local. It explicitly selects the candidate SDK. Generated apps contain no
-parent/sibling `replace` and can build independently against a real released SDK.
-
-After approved publication of the new tag, the normal installation is:
+Go>=1.27.4 is required. Module and CLI **v1.0.1** are publicly available:
 
 ```sh
 go install github.com/CellsWeb/crpc-go/cmd/crpc-go@v1.0.1
+crpc-go version
 crpc-go init my-api
 cd my-api
 go mod tidy
 go build ./...
+go test ./...
 crpc-go dev
 ```
 
-These versioned commands are a post-publication step; do not assume an uncreated
-tag resolves. Install binaries under GOBIN (or the default Go bin directory) and
-put that directory on PATH. The installed CLI's module version selects the SDK
-dependency. Local/VCS-stamped/development builds use the **existing older v1.0.0
-fallback**, because a local Git-derived pseudo-version may be unpublished.
-`GOWORK=off` selects the declared public dependency rather than your workspace.
+Put GOBIN, or the default Go bin directory, on PATH. The versioned installed CLI
+selects SDK v1.0.1 automatically. No parent checkout, replace directive or workspace
+is required for generated applications. For an existing module, use
+`go get github.com/CellsWeb/crpc-go@v1.0.1`.
+
+Local/VCS-stamped builds retain the older v1.0.0 fallback because a local Git
+revision may not identify published code. This is independent of the CLI's
+human-readable version. Use `go work init . /absolute/path/to/rpc-go` only for
+intentional local SDK development; keep machine-specific workspaces local.
+`GOWORK=off` selects the declared released dependency. The older v1.0.0 does not
+contain the v1.0.1 hardening fixes; prefer the versioned installed CLI for users.
 
 ## Generated layout and CLI
 

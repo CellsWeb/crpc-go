@@ -1,8 +1,8 @@
 # Deployment
 
-Deploy the reviewed candidate only after its actual release artifacts exist.
-Public v1.0.0 predates this hardening; use the exact newly approved version or an
-intentional local workspace for candidate testing. See [installation](getting-started.md).
+Deploy the public **v1.0.1** SDK with dependencies pinned in go.mod/go.sum.
+Use the matching versioned CLI for scaffolding. See
+[installation](getting-started.md) and retain the deployment checks below.
 
 ```sh
 go build -o dist/server ./cmd/server

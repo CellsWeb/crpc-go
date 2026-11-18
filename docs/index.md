@@ -3,9 +3,8 @@
 Typed native functions and schema contracts behind one RPC endpoint, with
 middleware, multipart handling, Unix IPC and server-rendered documentation.
 
-This candidate prepares v1.0.1. Public v1.0.0 predates the verified hardening fixes;
-read [installation and release status](getting-started.md) before choosing a
-dependency. Go >=1.27.4 is required. Node 24 LTS is the primary sibling/client test
+Version v1.0.1 is publicly released with the hardening fixes; see
+[installation](getting-started.md). Go >=1.27.4 is required. Node 24 LTS is the primary sibling/client test
 runtime; Bun is tested independently in the Node framework.
 
 - [Functions](functions.md), [schemas](schemas.md), [middleware](middlewares.md)

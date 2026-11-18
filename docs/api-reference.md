@@ -1,6 +1,6 @@
 # Public API reference
 
-Module: github.com/CellsWeb/crpc-go. Candidate v1.0.1 is not public v1.0.0; see
+Public module: github.com/CellsWeb/crpc-go@v1.0.1; see
 [installation](getting-started.md). Go >=1.27.4 is required.
 
 ## rpc

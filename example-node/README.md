@@ -1,8 +1,8 @@
 # Node client for the Go Unix daemon
 
 Use Node 24 LTS for the tested workflow and Go >=1.27.4 for the daemon. This source
-is part of the unpublishedv1.0.1 candidate; public v1.0.0 predates the verified
-socket-close/malformed-response and other hardening fixes.
+is included in public Go release v1.0.1. The historical v1.0.0 predates the
+connection/parse fixes.
 
 ```sh
 npm install
